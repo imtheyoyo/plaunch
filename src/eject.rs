@@ -105,7 +105,7 @@ mod imp {
             .filter_map(|pid| image_path(pid).map(|path| Proc { pid, path }))
             .filter(|p| on_drive(&p.path, drive))
             .collect();
-        out.sort_by(|a, b| a.name().to_lowercase().cmp(&b.name().to_lowercase()));
+        out.sort_by_key(|p| p.name().to_lowercase());
         out
     }
 
