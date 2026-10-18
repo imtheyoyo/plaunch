@@ -1,0 +1,107 @@
+<start>
+	<files>
+		<files name="Vid&#xE9;o">
+			<file name="VLC media player">
+				<path>Video\VLC\vlc.exe</path>
+				<runcount>62</runcount>
+				<rundate>2026/04/12 15:11:02</rundate>
+			</file>
+			<file name="MPC-HC 64">
+				<path>Video\MPC-HC\mpc-hc64.exe</path>
+				<runcount>23</runcount>
+				<rundate>2025/03/31 14:58:44</rundate>
+			</file>
+			<file name="Mes vid&#xE9;os">
+				<path>Video\Mes vid&#xE9;os</path>
+				<runcount>4</runcount>
+				<rundate>2024/01/02 10:00:00</rundate>
+			</file>
+		</files>
+		<files name="Musique">
+			<file name="Audacity&#xAE; Sound Editor">
+				<path>Musique\Audacity\audacity.exe</path>
+				<runcount>3</runcount>
+				<rundate>2023/09/24 19:02:59</rundate>
+			</file>
+			<files name="Tags">
+				<file name="Tag&#x26;Rename">
+					<path>Musique\TagRename\TagRename.exe</path>
+					<runcount>39</runcount>
+					<rundate>2022/06/16 01:43:58</rundate>
+				</file>
+			</files>
+		</files>
+		<files name="Outils">
+			<file name="PowerISO">
+				<path>C:\Program Files (x86)\PowerISO\PowerISO.exe</path>
+				<directory>C:\Program Files (x86)\PowerISO</directory>
+				<runcount>1</runcount>
+				<rundate>2021/01/05 14:36:36</rundate>
+			</file>
+			<file name="Lecteur r&#xE9;seau">
+				<path>\\NAS\Partage\Outil\outil.exe</path>
+			</file>
+			<file name="qBittorrent">
+				<path>..\PortableApps\qBittorrentPortable\qBittorrentPortable.exe</path>
+			</file>
+			<file name="Script">
+				<path>Outils\demarrer.cmd</path>
+				<runcount>3</runcount>
+				<rundate>2009/08/01 09:38:36</rundate>
+			</file>
+		</files>
+		<files name="Vide">
+		</files>
+		<file name="Notepad2">
+			<path>Outils\Notepad2\Notepad2.exe</path>
+			<runcount>15</runcount>
+			<rundate>2021/12/15 22:32:29</rundate>
+		</file>
+	</files>
+	<notes>
+	</notes>
+	<colors>
+		<color name="0">
+			<value>A0A0FFh</value>
+		</color>
+	</colors>
+	<configurationfile>
+		<backupmode>pbmKeepRecent</backupmode>
+	</configurationfile>
+	<execution>
+		<count>1089</count>
+		<overalltime>93400:47:10.604</overalltime>
+	</execution>
+	<general>
+		<executionaction>0</executionaction>
+		<language>auto</language>
+		<singleclick>False</singleclick>
+	</general>
+	<note>
+		<alarm>
+			<notify>
+				<autoclose>False</autoclose>
+				<duration>10</duration>
+				<sound></sound>
+			</notify>
+		</alarm>
+	</note>
+	<panel>
+		<hotkey>False</hotkey>
+		<hotkeycode>15</hotkeycode>
+		<hotkeymodifier>7</hotkeymodifier>
+		<title></title>
+	</panel>
+	<window>
+		<main>
+			<position>
+				<x>32767</x>
+				<y>32767</y>
+			</position>
+			<size>
+				<x>451</x>
+				<y>823</y>
+			</size>
+		</main>
+	</window>
+</start>

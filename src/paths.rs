@@ -1,0 +1,221 @@
+//! Résolution des chemins à la manière de PStart.
+//!
+//! Les chemins d'un `PStart.xml` peuvent être :
+//! - relatifs au dossier de PStart : `_HD\mkvtoolnix\mkvtoolnix-gui.exe`,
+//!   `..\PortableApps\qBittorrentPortable\qBittorrentPortable.exe` ;
+//! - relatifs à la racine du lecteur de PStart : `\Outils\x.exe` ;
+//! - absolus : `C:\Program Files (x86)\PowerISO\PowerISO.exe` ;
+//! - UNC : `\\SERVEURNAS\Disque_DATA_1\_BDZ\ComicRack\ComicRack.exe`.
+//!
+//! Le calcul se fait sur des chaînes au format Windows pour que le
+//! comportement soit identique (et testable) sur toutes les plateformes.
+
+/// Résout `raw` par rapport au dossier `base` (dossier du fichier PStart.xml).
+pub fn resolve(raw: &str, base: &str) -> String {
+    let raw = expand_env(raw.trim());
+    let raw = raw.replace('/', "\\");
+    let base = base.replace('/', "\\");
+
+    let joined = if raw.starts_with("\\\\") || has_drive(&raw) {
+        raw
+    } else if raw.starts_with('\\') {
+        // Relatif à la racine du lecteur de base.
+        match prefix_of(&base) {
+            Some(p) => format!("{p}{raw}"),
+            None => raw,
+        }
+    } else if raw.is_empty() {
+        base.clone()
+    } else {
+        format!("{}\\{}", base.trim_end_matches('\\'), raw)
+    };
+    normalize(&joined)
+}
+
+/// `true` si le chemin commence par une lettre de lecteur (`C:`).
+pub fn has_drive(p: &str) -> bool {
+    let b = p.as_bytes();
+    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+/// Préfixe non modifiable d'un chemin absolu : `C:` ou `\\serveur\partage`.
+fn prefix_of(p: &str) -> Option<String> {
+    if has_drive(p) {
+        return Some(p[..2].to_string());
+    }
+    if let Some(rest) = p.strip_prefix("\\\\") {
+        let mut parts = rest.splitn(3, '\\');
+        let server = parts.next().unwrap_or("");
+        let share = parts.next().unwrap_or("");
+        if share.is_empty() {
+            return Some(format!("\\\\{server}"));
+        }
+        return Some(format!("\\\\{server}\\{share}"));
+    }
+    None
+}
+
+/// Supprime les composants `.` et `..` sans remonter au-delà du préfixe.
+pub fn normalize(p: &str) -> String {
+    let (prefix, rest) = match prefix_of(p) {
+        Some(pre) => {
+            let rest = p[pre.len()..].to_string();
+            (pre, rest)
+        }
+        None => (String::new(), p.to_string()),
+    };
+    let absolute = rest.starts_with('\\') || !prefix.is_empty();
+    let mut parts: Vec<&str> = Vec::new();
+    for comp in rest.split('\\') {
+        match comp {
+            "" | "." => {}
+            ".." => {
+                if parts.last().is_some_and(|l| *l != "..") {
+                    parts.pop();
+                } else if !absolute {
+                    parts.push("..");
+                }
+            }
+            c => parts.push(c),
+        }
+    }
+    let body = parts.join("\\");
+    let trailing = if rest.ends_with('\\') && !body.is_empty() {
+        "\\"
+    } else {
+        ""
+    };
+    if prefix.is_empty() && !absolute {
+        format!("{body}{trailing}")
+    } else {
+        format!("{prefix}\\{body}{trailing}")
+    }
+}
+
+/// Dossier parent d'un chemin Windows (sans le dernier composant).
+pub fn parent(p: &str) -> Option<String> {
+    let p = p.trim_end_matches('\\');
+    let idx = p.rfind('\\')?;
+    let parent = &p[..idx];
+    if parent.is_empty() || parent == "\\" {
+        return None;
+    }
+    if has_drive(parent) && parent.len() == 2 {
+        return Some(format!("{parent}\\"));
+    }
+    Some(parent.to_string())
+}
+
+/// Remplace les variables `%NOM%` par leur valeur d'environnement.
+pub fn expand_env(s: &str) -> String {
+    if !s.contains('%') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name) {
+                    Ok(v) if !name.is_empty() => out.push_str(&v),
+                    _ => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Convertit un chemin Windows en chemin natif de la plateforme courante.
+pub fn to_native(p: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from(p.replace('\\', "/"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: &str = "F:\\_Appli Portables";
+
+    #[test]
+    fn relative() {
+        assert_eq!(
+            resolve("_HD\\mkvtoolnix\\mkvtoolnix-gui.exe", BASE),
+            "F:\\_Appli Portables\\_HD\\mkvtoolnix\\mkvtoolnix-gui.exe"
+        );
+    }
+
+    #[test]
+    fn parent_dir() {
+        assert_eq!(
+            resolve(
+                "..\\PortableApps\\qBittorrentPortable\\qBittorrentPortable.exe",
+                BASE
+            ),
+            "F:\\PortableApps\\qBittorrentPortable\\qBittorrentPortable.exe"
+        );
+    }
+
+    #[test]
+    fn absolute_and_unc() {
+        assert_eq!(
+            resolve("C:\\Program Files (x86)\\PowerISO\\PowerISO.exe", BASE),
+            "C:\\Program Files (x86)\\PowerISO\\PowerISO.exe"
+        );
+        assert_eq!(
+            resolve(
+                "\\\\SERVEURNAS\\Disque_DATA_1\\_BDZ\\ComicRack\\ComicRack.exe",
+                BASE
+            ),
+            "\\\\SERVEURNAS\\Disque_DATA_1\\_BDZ\\ComicRack\\ComicRack.exe"
+        );
+    }
+
+    #[test]
+    fn drive_root() {
+        assert_eq!(resolve("\\Outils\\x.exe", BASE), "F:\\Outils\\x.exe");
+    }
+
+    #[test]
+    fn cannot_escape_drive() {
+        assert_eq!(resolve("..\\..\\..\\x.exe", BASE), "F:\\x.exe");
+    }
+
+    #[test]
+    fn folders_and_parents() {
+        assert_eq!(
+            resolve("_Internet\\JDownloader\\downloads", BASE),
+            "F:\\_Appli Portables\\_Internet\\JDownloader\\downloads"
+        );
+        assert_eq!(parent("F:\\a\\b.exe").as_deref(), Some("F:\\a"));
+        assert_eq!(parent("F:\\b.exe").as_deref(), Some("F:\\"));
+    }
+
+    #[test]
+    fn env_vars() {
+        std::env::set_var("PSTART_TEST_VAR", "C:\\Outils");
+        assert_eq!(
+            resolve("%PSTART_TEST_VAR%\\x.exe", BASE),
+            "C:\\Outils\\x.exe"
+        );
+        assert_eq!(expand_env("100%"), "100%");
+        assert_eq!(expand_env("%INCONNUE_XYZ%"), "%INCONNUE_XYZ%");
+    }
+}

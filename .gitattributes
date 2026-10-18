@@ -1,0 +1,2 @@
+# Les fichiers PStart utilisent CRLF : ne jamais les convertir.
+*.xml -text
