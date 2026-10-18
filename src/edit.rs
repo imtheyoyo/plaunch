@@ -19,6 +19,8 @@ pub enum NewItem {
     Group {
         name: String,
     },
+    /// Trait de séparation (balise `<separator>` propre à PStart-rs).
+    Separator,
 }
 
 impl NewItem {
@@ -46,6 +48,7 @@ impl NewItem {
                 el.attrs.push(("name".into(), name));
                 el
             }
+            NewItem::Separator => Element::new("separator"),
         }
     }
 }
@@ -165,6 +168,46 @@ pub fn update_entry(
     Ok(())
 }
 
+/// Icône d'un groupe (attribut `icon`, propre à PStart-rs).
+pub fn set_group_icon(cfg: &mut Config, path: &[usize], icon: Option<&str>) -> Result<(), String> {
+    let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
+    el.attrs.retain(|(k, _)| k != "icon");
+    if let Some(i) = icon.map(str::trim).filter(|i| !i.is_empty()) {
+        el.attrs.push(("icon".into(), i.to_string()));
+    }
+    Ok(())
+}
+
+/// Raccourcis directement contenus dans un groupe (lancement groupé).
+pub fn group_entries(cfg: &Config, path: &[usize]) -> Vec<ItemPath> {
+    let Some(el) = cfg.item(path) else {
+        return Vec::new();
+    };
+    el.children
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.name == "file")
+        .map(|(i, _)| {
+            let mut p = path.to_vec();
+            p.push(i);
+            p
+        })
+        .collect()
+}
+
+/// Trouve un groupe de premier niveau par son nom, ou le crée à la fin.
+pub fn find_or_create_group(cfg: &mut Config, name: &str) -> Result<ItemPath, String> {
+    let files = files_mut(cfg);
+    if let Some(i) = files
+        .children
+        .iter()
+        .position(|c| c.name == "files" && c.attr("name").map(str::trim) == Some(name))
+    {
+        return Ok(vec![i]);
+    }
+    insert(cfg, &[], None, NewItem::Group { name: name.into() })
+}
+
 /// Épingle ou désépingle un raccourci.
 pub fn set_favorite(cfg: &mut Config, path: &[usize], on: bool) -> Result<(), String> {
     let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
@@ -183,6 +226,31 @@ pub fn retarget_drive(cfg: &mut Config, old: char, new: char) -> usize {
             if c.name == "path" || c.name == "directory" {
                 if let Some(t) = crate::paths::replace_drive(&c.text, old, new) {
                     c.text = t;
+                    n += 1;
+                }
+            }
+        }
+    });
+    n
+}
+
+/// Rend relatifs les chemins absolus situés sur le lecteur de PStart.xml
+/// (portables d'une lettre à l'autre). Renvoie le nombre de balises changées.
+pub fn make_portable(cfg: &mut Config) -> usize {
+    let base = cfg.base_dir.clone();
+    let Some(letter) = crate::paths::drive_letter(&base) else {
+        return 0;
+    };
+    let mut n = 0;
+    visit_entries(files_mut(cfg), &mut |el| {
+        for c in el.children.iter_mut() {
+            if (c.name == "path" || c.name == "directory")
+                && crate::paths::drive_letter(c.text.trim()) == Some(letter)
+                && !crate::paths::is_url(&c.text)
+            {
+                let rel = crate::paths::make_relative(c.text.trim(), &base);
+                if rel != c.text {
+                    c.text = rel;
                     n += 1;
                 }
             }
@@ -401,6 +469,7 @@ mod tests {
             autorun: true,
             admin: true,
             favorite: true,
+            hotkey: "Ctrl+Alt+V".into(),
         };
         update_entry(
             &mut c,
@@ -424,6 +493,7 @@ mod tests {
                 "autorun",
                 "runasadmin",
                 "favorite",
+                "globalhotkey",
                 "runcount",
                 "rundate"
             ]
@@ -463,6 +533,42 @@ mod tests {
             Some("D:\\Program Files (x86)\\PowerISO\\PowerISO.exe")
         );
         assert_eq!(count_drive_refs(&c, 'C'), 0);
+    }
+
+    #[test]
+    fn portable_paths() {
+        let mut c = Config::from_str(SAMPLE, "C:\\Program Files (x86)\\Portable").unwrap();
+        // PowerISO est sur C: comme la base : chemin et dossier deviennent relatifs.
+        assert_eq!(make_portable(&mut c), 2);
+        assert_eq!(
+            c.item(&[2, 0]).unwrap().child_text("path"),
+            Some("..\\PowerISO\\PowerISO.exe")
+        );
+        assert_eq!(make_portable(&mut c), 0);
+    }
+
+    #[test]
+    fn separators_groups_and_icons() {
+        let mut c = cfg();
+        let s = insert(&mut c, &[0], Some(1), NewItem::Separator).unwrap();
+        assert_eq!(c.item(&s).unwrap().name, "separator");
+        assert_eq!(count_entries(c.item(&[0]).unwrap()), 3);
+        assert!(c.to_xml().contains("\t\t\t<separator></separator>\r\n"));
+        assert_eq!(c.flatten().len(), 10);
+        assert_eq!(
+            group_entries(&c, &[0]),
+            vec![vec![0, 0], vec![0, 2], vec![0, 3]]
+        );
+        set_group_icon(&mut c, &[1], Some("Musique\\note.ico")).unwrap();
+        assert_eq!(
+            c.item(&[1]).unwrap().attr("icon"),
+            Some("Musique\\note.ico")
+        );
+        set_group_icon(&mut c, &[1], None).unwrap();
+        assert_eq!(c.item(&[1]).unwrap().attr("icon"), None);
+        assert_eq!(find_or_create_group(&mut c, "Outils").unwrap(), vec![2]);
+        let g = find_or_create_group(&mut c, "Nouveaux").unwrap();
+        assert_eq!(g, vec![5]);
     }
 
     #[test]

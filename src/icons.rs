@@ -196,7 +196,15 @@ impl IconColor {
 
 /// Icône de l'application : carré arrondi en dégradé et motif blanc.
 pub fn app_icon(shape: IconShape, color: IconColor) -> IconImage {
-    const S: u32 = 32;
+    render_icon(shape, color, 32)
+}
+
+/// Même dessin à une taille quelconque (fichier .ico de l'exécutable).
+pub fn render_icon(shape: IconShape, color: IconColor, size: u32) -> IconImage {
+    #[allow(non_snake_case)]
+    let S = size;
+    // Le dessin est défini sur une grille de 32 px.
+    let k = 32.0 / S as f32;
     let mut rgba = vec![0u8; (S * S * 4) as usize];
     let radius = 7.0f32;
     let (top, bottom) = color.gradient();
@@ -207,8 +215,8 @@ pub fn app_icon(shape: IconShape, color: IconColor) -> IconImage {
             let mut cover_fg = 0.0f32;
             for sy in 0..4 {
                 for sx in 0..4 {
-                    let px = x as f32 + (sx as f32 + 0.5) / 4.0;
-                    let py = y as f32 + (sy as f32 + 0.5) / 4.0;
+                    let px = (x as f32 + (sx as f32 + 0.5) / 4.0) * k;
+                    let py = (y as f32 + (sy as f32 + 0.5) / 4.0) * k;
                     if in_rounded_rect(px, py, 1.0, 1.0, 31.0, 31.0, radius) {
                         cover_box += 1.0 / 16.0;
                         if shape.contains(px, py) {
@@ -354,6 +362,10 @@ mod imp {
     }
 
     pub fn extract(target: &str) -> Option<IconImage> {
+        // Lien web : icône du navigateur par défaut (type .html).
+        if crate::paths::is_url(target) {
+            return query("page.html", true);
+        }
         // Les chemins réseau peuvent bloquer longtemps : on se contente de
         // l'icône générique du type de fichier, sans accès au partage.
         let network = target.starts_with("\\\\");
@@ -546,6 +558,26 @@ mod tests {
             assert_eq!(IconColor::from_key(color.key()), color);
         }
         assert_eq!(IconShape::from_key("?"), IconShape::Play);
+    }
+
+    /// Régénère `assets/pstart-rs.256.rgba` (puis le .ico avec
+    /// `python3 assets/make_ico.py`) : `cargo test -- --ignored ico_source`.
+    #[test]
+    #[ignore]
+    fn ico_source() {
+        let img = render_icon(IconShape::Play, IconColor::Blue, 256);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/pstart-rs.256.rgba");
+        std::fs::write(path, &img.rgba).unwrap();
+    }
+
+    #[test]
+    fn render_scales() {
+        let big = render_icon(IconShape::Play, IconColor::Blue, 64);
+        assert_eq!(big.rgba.len(), 64 * 64 * 4);
+        assert_eq!(big.rgba[3], 0);
+        let c = ((32 * 64 + 30) * 4) as usize;
+        assert_eq!(big.rgba[c + 3], 255);
+        assert!(big.rgba[c] > 200);
     }
 
     #[test]

@@ -7,14 +7,18 @@ mod autostart;
 mod backup;
 mod config;
 mod edit;
+mod eject;
+mod fuzzy;
 mod hotcorner;
 mod hotkey;
 mod i18n;
 mod icons;
 mod instance;
 mod launcher;
+mod log;
 mod notes;
 mod paths;
+mod scan;
 mod settings;
 mod startmenu;
 mod state;
@@ -43,6 +47,7 @@ fn find_config() -> Option<PathBuf> {
 
 fn main() -> eframe::Result {
     // Second lancement : on réveille la fenêtre existante et on s'arrête.
+    log::install_panic_hook();
     // Après une mise à jour, l'ancienne instance met un instant à se fermer.
     let restarted = std::env::var_os(update::RESTART_ENV).is_some();
     let mut acquired = instance::acquire();
@@ -58,6 +63,13 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     update::cleanup();
+    log::info(&format!(
+        "démarrage de PStart-rs {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::current_exe()
+            .map(|e| e.display().to_string())
+            .unwrap_or_default()
+    ));
 
     let file = find_config();
     let settings_path = file.as_deref().map(settings::path_for);

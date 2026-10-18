@@ -14,6 +14,7 @@ use crate::icons::IconImage;
 use crate::launcher;
 use crate::notes::Notes;
 use crate::startmenu::StartItem;
+use crate::xml::Element;
 
 #[derive(Default)]
 pub struct Shared {
@@ -44,9 +45,28 @@ pub struct Shared {
     /// Donner le focus à la recherche au prochain affichage.
     pub focus_search: AtomicBool,
     pub ctx: OnceLock<egui::Context>,
+    /// États précédents de l'arborescence (annuler / rétablir).
+    pub undo: Mutex<Vec<Element>>,
+    pub redo: Mutex<Vec<Element>>,
+    /// PStart.xml modifié par un autre programme : à recharger.
+    pub file_changed: AtomicBool,
+    /// Éjection demandée depuis le menu de l'icône.
+    pub ask_eject: AtomicBool,
+    /// Raccourcis clavier globaux des raccourcis : identifiant → position.
+    pub entry_hotkeys: Mutex<HashMap<u32, Vec<usize>>>,
 }
 
+/// Nombre d'étapes d'annulation conservées.
+const UNDO_DEPTH: usize = 50;
+
 impl Shared {
+    /// Message d'erreur : barre d'état et journal.
+    pub fn error(&self, s: impl Into<String>) {
+        let s = s.into();
+        crate::log::error(&s);
+        self.set_status(s);
+    }
+
     pub fn set_status(&self, s: impl Into<String>) {
         *self.status.lock().unwrap() = s.into();
         self.repaint();
@@ -92,7 +112,10 @@ impl Shared {
                         ),
                     }
                 }
-                Err(e) => trf("Échec : {}", &[&e]),
+                Err(e) => {
+                    crate::log::error(&format!("lancement de {target} : {e}"));
+                    trf("Échec : {}", &[&e])
+                }
             }
         };
         self.set_status(msg);
@@ -104,7 +127,23 @@ impl Shared {
         let result = {
             let mut guard = self.config.lock().unwrap();
             let cfg = guard.as_mut()?;
-            f(cfg).and_then(|r| cfg.save().map(|()| r))
+            let before = cfg.root.clone();
+            match f(cfg).and_then(|r| cfg.save().map(|()| r)) {
+                Ok(r) => {
+                    let mut undo = self.undo.lock().unwrap();
+                    undo.push(before);
+                    if undo.len() > UNDO_DEPTH {
+                        undo.remove(0);
+                    }
+                    self.redo.lock().unwrap().clear();
+                    Ok(r)
+                }
+                Err(e) => {
+                    // Rien n'est gardé d'une modification qui a échoué.
+                    cfg.root = before;
+                    Err(e)
+                }
+            }
         };
         match result {
             Ok(r) => {
@@ -113,10 +152,65 @@ impl Shared {
                 Some(r)
             }
             Err(e) => {
-                self.set_status(trf("Modification impossible : {}", &[&e]));
+                self.error(trf("Modification impossible : {}", &[&e]));
                 None
             }
         }
+    }
+
+    /// Annule (`redo = false`) ou rétablit la dernière modification.
+    pub fn undo_redo(&self, redo: bool) -> bool {
+        let (from, to) = if redo {
+            (&self.redo, &self.undo)
+        } else {
+            (&self.undo, &self.redo)
+        };
+        let Some(state) = from.lock().unwrap().pop() else {
+            return false;
+        };
+        let result = {
+            let mut guard = self.config.lock().unwrap();
+            let Some(cfg) = guard.as_mut() else {
+                return false;
+            };
+            let current = std::mem::replace(&mut cfg.root, state);
+            match cfg.save() {
+                Ok(()) => {
+                    to.lock().unwrap().push(current);
+                    Ok(())
+                }
+                Err(e) => {
+                    let state = std::mem::replace(&mut cfg.root, current);
+                    from.lock().unwrap().push(state);
+                    Err(e)
+                }
+            }
+        };
+        match result {
+            Ok(()) => {
+                self.structure_version.fetch_add(1, Ordering::SeqCst);
+                self.repaint();
+                true
+            }
+            Err(e) => {
+                self.error(e);
+                false
+            }
+        }
+    }
+
+    /// Lettre du lecteur de PStart.xml s'il peut être éjecté.
+    pub fn eject_drive(&self) -> Option<char> {
+        let guard = self.config.lock().unwrap();
+        let file = guard.as_ref()?.file.to_string_lossy().into_owned();
+        let drive = crate::paths::drive_letter(&file)?;
+        crate::eject::can_eject(drive).then_some(drive)
+    }
+
+    /// Oublie l'historique (nouveau fichier chargé).
+    pub fn clear_history(&self) {
+        self.undo.lock().unwrap().clear();
+        self.redo.lock().unwrap().clear();
     }
 
     /// Lance un fichier externe (résultat du menu Démarrer), sans statistiques.
@@ -124,7 +218,7 @@ impl Shared {
         let workdir = crate::paths::parent(path);
         match launcher::launch(path, workdir.as_deref()) {
             Ok(()) => self.set_status(trf("Lancé : {}", &[&name])),
-            Err(e) => self.set_status(trf("Échec : {}", &[&e])),
+            Err(e) => self.error(trf("Échec : {}", &[&e])),
         }
     }
 

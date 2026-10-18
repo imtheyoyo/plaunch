@@ -72,7 +72,7 @@ fn check(shared: &Shared) {
         let fired = notes.take_due(now);
         if !fired.is_empty() {
             if let Err(e) = notes.save() {
-                shared.set_status(e);
+                shared.error(e);
             }
         }
         // État des alarmes après reprogrammation, pour le message.

@@ -80,6 +80,12 @@ pub struct Settings {
     pub check_updates: bool,
     /// Lettre du lecteur au dernier lancement (détection des changements).
     pub last_drive: Option<char>,
+    /// Dossier où chercher de nouveaux programmes (relatif accepté).
+    pub scan_folder: Option<String>,
+    /// Signaler les nouveaux programmes de ce dossier au démarrage.
+    pub scan_on_start: bool,
+    /// Programmes trouvés que l'utilisateur ne veut pas ajouter.
+    pub scan_ignored: Vec<String>,
 }
 
 impl Default for Settings {
@@ -103,6 +109,9 @@ impl Default for Settings {
             compact: false,
             check_updates: true,
             last_drive: None,
+            scan_folder: None,
+            scan_on_start: false,
+            scan_ignored: Vec::new(),
         }
     }
 }
@@ -146,6 +155,12 @@ impl Settings {
              # Lettre du lecteur au dernier lancement (géré automatiquement).\r\n\
              last_drive={}\r\n\
              \r\n\
+             # Dossier surveillé pour les nouveaux programmes portables (ex. PortableApps),\r\n\
+             # signalement au démarrage, et programmes ignorés (séparés par |).\r\n\
+             scan_folder={}\r\n\
+             scan_on_start={}\r\n\
+             scan_ignored={}\r\n\
+             \r\n\
              # Langue de l'interface : {}.\r\n\
              language={}\r\n\
              \r\n\
@@ -173,6 +188,9 @@ impl Settings {
             self.compact,
             self.check_updates,
             self.last_drive.map(String::from).unwrap_or_default(),
+            self.scan_folder.as_deref().unwrap_or(""),
+            self.scan_on_start,
+            self.scan_ignored.join("|"),
             join(Language::ALL.iter().map(|l| l.key()).collect()),
             self.language.key(),
             join(Theme::ALL.iter().map(|l| l.key()).collect()),
@@ -230,7 +248,7 @@ pub fn load(path: &Path) -> Settings {
     match fs::read_to_string(path) {
         Ok(text) => {
             let s = parse(&text);
-            if !text.contains("check_updates=") {
+            if !text.contains("scan_on_start=") {
                 let _ = s.save(path);
             }
             s
@@ -288,6 +306,16 @@ pub fn parse(text: &str) -> Settings {
             "reminders" => s.reminders = ReminderStyle::from_key(value),
             "compact" => s.compact = boolean(value, s.compact),
             "check_updates" => s.check_updates = boolean(value, s.check_updates),
+            "scan_folder" => s.scan_folder = (!value.is_empty()).then(|| value.to_string()),
+            "scan_on_start" => s.scan_on_start = boolean(value, s.scan_on_start),
+            "scan_ignored" => {
+                s.scan_ignored = value
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
             "last_drive" => {
                 s.last_drive = value
                     .chars()
@@ -351,6 +379,9 @@ mod tests {
             compact: true,
             check_updates: false,
             last_drive: Some('F'),
+            scan_folder: Some("PortableApps".into()),
+            scan_on_start: true,
+            scan_ignored: vec!["E:\\A\\a.exe".into(), "E:\\B\\b.exe".into()],
             ..Default::default()
         };
         assert_eq!(parse(&s.to_ini()), s);

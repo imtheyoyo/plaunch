@@ -21,6 +21,7 @@ const ID_SHOW: &str = "show";
 const ID_QUIT: &str = "quit";
 const ID_NOTES: &str = "notes";
 const ID_AUTOSTART: &str = "autostart";
+const ID_EJECT: &str = "eject";
 const ENTRY_PREFIX: &str = "e:";
 
 pub struct Tray {
@@ -109,6 +110,11 @@ fn install_handlers(shared: Arc<Shared>) {
                 shared.repaint();
             }
             ID_AUTOSTART => toggle_autostart(&shared),
+            ID_EJECT => {
+                shared.ask_eject.store(true, Ordering::SeqCst);
+                window::show();
+                shared.repaint();
+            }
             _ => {
                 if let Some(path) = parse_entry_id(id) {
                     shared.launch(&path);
@@ -180,6 +186,14 @@ fn build_menu(shared: &Shared) -> Menu {
         autostart::is_enabled(),
         None,
     ));
+    if let Some(drive) = shared.eject_drive() {
+        let _ = menu.append(&MenuItem::with_id(
+            ID_EJECT,
+            trf("Éjecter la clé ({}:)…", &[&drive]),
+            true,
+            None,
+        ));
+    }
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id(
         ID_QUIT,
@@ -228,6 +242,7 @@ fn build_items(
                 }
                 out.push(Box::new(sub));
             }
+            "separator" => out.push(Box::new(PredefinedMenuItem::separator())),
             "file" => {
                 let target = cfg.resolve(child);
                 out.push(Box::new(IconMenuItem::with_id(

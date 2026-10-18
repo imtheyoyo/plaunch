@@ -23,8 +23,8 @@ use crate::startmenu::{self, Source, StartItem};
 use crate::state::Shared;
 use crate::xml::Element;
 use crate::{
-    alarms, autostart, backup, hotcorner, hotkey, icons, launcher, notes, paths, tray, update,
-    window,
+    alarms, autostart, backup, eject, fuzzy, hotcorner, hotkey, icons, launcher, notes, paths,
+    scan, tray, update, window,
 };
 
 mod stats;
@@ -77,6 +77,8 @@ enum Browse {
     IconFile,
     BackupExport,
     BackupRestore,
+    ScanFolder,
+    GroupIcon,
 }
 
 /// Action demandée pendant le dessin, appliquée ensuite, une fois la
@@ -127,6 +129,37 @@ enum Action {
     Restore(PathBuf),
     CheckUpdate,
     InstallUpdate,
+    Undo,
+    Redo,
+    LaunchGroup {
+        path: ItemPath,
+        confirmed: bool,
+    },
+    NewSeparator(Option<ItemPath>),
+    NewLink(Option<ItemPath>),
+    AskEject,
+    Eject {
+        force: bool,
+    },
+    ShowFound,
+    Import {
+        items: Vec<scan::Found>,
+        by_category: bool,
+        group: String,
+    },
+    IgnoreFound(Vec<String>),
+    MakePortable,
+    OpenLog,
+}
+
+/// Éjection en cours (fermeture des programmes en tâche de fond).
+#[derive(Default)]
+enum EjectState {
+    #[default]
+    Idle,
+    Waiting,
+    Remaining(Vec<eject::Proc>),
+    Ready,
 }
 
 enum FormKind {
@@ -148,6 +181,8 @@ struct EditForm {
     path: String,
     directory: String,
     options: EntryOptions,
+    /// Icône d'un groupe.
+    icon: String,
     error: Option<String>,
     focus: bool,
 }
@@ -199,6 +234,22 @@ enum Dialog {
         file: PathBuf,
         contents: Vec<String>,
     },
+    ConfirmLaunchGroup {
+        path: ItemPath,
+        name: String,
+        count: usize,
+    },
+    Eject {
+        drive: char,
+        procs: Vec<eject::Proc>,
+        /// La fermeture propre n'a pas suffi.
+        stubborn: bool,
+    },
+    Import {
+        items: Vec<(bool, scan::Found)>,
+        by_category: bool,
+        group: String,
+    },
 }
 
 type Textures = HashMap<String, egui::TextureHandle>;
@@ -221,7 +272,7 @@ pub struct PStartApp {
     first_frame: bool,
     tray: Option<tray::Tray>,
     hotkey_info: Option<String>,
-    _hotkey: Option<global_hotkey::GlobalHotKeyManager>,
+    hotkeys: Option<hotkey::Hotkeys>,
     settings_path: Option<PathBuf>,
     /// Notes modifiées, à enregistrer après un court délai.
     notes_dirty: Option<Instant>,
@@ -234,6 +285,10 @@ pub struct PStartApp {
     scroll_to_selected: bool,
     /// Largeur de la fenêtre avant le passage en mode compact.
     wide_width: f32,
+    eject_state: Arc<std::sync::Mutex<EjectState>>,
+    /// Nouveaux programmes détectés au démarrage.
+    found: Vec<scan::Found>,
+    found_rx: Option<Receiver<Vec<scan::Found>>>,
 }
 
 impl PStartApp {
@@ -274,7 +329,7 @@ impl PStartApp {
             first_frame: true,
             tray: None,
             hotkey_info: None,
-            _hotkey: None,
+            hotkeys: None,
             settings_path,
             notes_dirty: None,
             search_id: None,
@@ -282,6 +337,9 @@ impl PStartApp {
             open_groups: HashSet::new(),
             scroll_to_selected: false,
             wide_width: 620.0,
+            eject_state: Arc::default(),
+            found: Vec::new(),
+            found_rx: None,
         };
         if let Some(f) = file {
             app.open(&f);
@@ -295,6 +353,12 @@ impl PStartApp {
         }
         app.scan_start_menu();
         app.init_desktop_integration();
+        app.watch_file();
+        if app.settings.scan_on_start {
+            if let Some(dir) = app.scan_dir() {
+                app.start_scan(dir, true);
+            }
+        }
         alarms::spawn(app.shared.clone());
         hotcorner::spawn(app.shared.clone());
         app
@@ -313,17 +377,92 @@ impl PStartApp {
                 Err(e) => problems.push(e),
             }
         }
-        if let Some(spec) = self.settings.hotkey.clone() {
-            match hotkey::register(&spec, self.shared.clone()) {
-                Ok(m) => {
-                    self._hotkey = Some(m);
-                    self.hotkey_info = Some(spec);
+        match hotkey::init(self.settings.hotkey.as_deref(), self.shared.clone()) {
+            Ok((hk, problem)) => {
+                match problem {
+                    Some(p) => problems.push(p),
+                    None => self.hotkey_info = self.settings.hotkey.clone(),
                 }
-                Err(e) => problems.push(e),
+                self.hotkeys = Some(hk);
             }
+            Err(e) => problems.push(e),
         }
         if !problems.is_empty() {
-            self.shared.set_status(problems.join(" ; "));
+            self.shared.error(problems.join(" ; "));
+        }
+    }
+
+    /// Surveille PStart.xml : une modification par un autre programme
+    /// (synchronisation, autre PC, PStart) déclenche un rechargement.
+    fn watch_file(&self) {
+        let shared = self.shared.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(2));
+            if shared.quitting.load(Ordering::SeqCst) {
+                return;
+            }
+            let changed = shared
+                .config
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(Config::changed_on_disk);
+            if changed && !shared.file_changed.swap(true, Ordering::SeqCst) {
+                shared.repaint();
+            }
+        });
+    }
+
+    /// Dossier de recherche de programmes (réglage, relatif au fichier).
+    fn scan_dir(&self) -> Option<PathBuf> {
+        let raw = self.settings.scan_folder.as_deref()?;
+        let resolved = paths::resolve(raw, &self.base_dir());
+        Some(paths::to_native(&resolved))
+    }
+
+    /// Cherche les programmes absents de PStart.xml dans `dir`.
+    /// `quiet` : au démarrage, ne rien afficher s'il n'y a rien.
+    fn start_scan(&mut self, dir: PathBuf, quiet: bool) {
+        let (known, ignored) = {
+            let guard = self.shared.config.lock().unwrap();
+            let Some(cfg) = guard.as_ref() else { return };
+            let known: HashSet<String> = cfg
+                .flatten()
+                .into_iter()
+                .map(|e| paths::to_native(&e.target).to_string_lossy().to_lowercase())
+                .collect();
+            (known, self.settings.scan_ignored.clone())
+        };
+        let (tx, rx) = mpsc::channel();
+        self.found_rx = Some(rx);
+        if !quiet {
+            self.shared.set_status(tr("Recherche de programmes…"));
+        }
+        let shared = self.shared.clone();
+        std::thread::spawn(move || {
+            let mut found = scan::scan(&dir, &known);
+            found.retain(|f| !ignored.iter().any(|i| i.eq_ignore_ascii_case(&f.path)));
+            if found.is_empty() && !quiet {
+                shared.set_status(tr("Aucun nouveau programme trouvé"));
+            }
+            let _ = tx.send(found);
+            shared.repaint();
+        });
+    }
+
+    fn poll_scan(&mut self) {
+        let Some(rx) = &self.found_rx else { return };
+        let Ok(found) = rx.try_recv() else { return };
+        self.found_rx = None;
+        if found.is_empty() {
+            return;
+        }
+        self.shared
+            .set_status(trf("{} nouveaux programmes détectés", &[&found.len()]));
+        self.found = found;
+        // Résultat d'une recherche demandée : affichage immédiat.
+        if self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_))) {
+            self.apply(Action::ShowFound);
         }
     }
 
@@ -349,6 +488,8 @@ impl PStartApp {
                     .set_status(trf("{} raccourcis chargés", &[&targets.len()]));
                 self.exists.clear();
                 self.check_existence(targets.clone());
+                targets.extend(group_icons(&cfg));
+                self.shared.clear_history();
                 self.shared.icons.lock().unwrap().clear();
                 self.textures.clear();
                 self.flush_notes();
@@ -432,8 +573,7 @@ impl PStartApp {
     fn update_autostart(&self) {
         let file = self.config_file();
         if let Err(e) = autostart::set(true, file.as_deref()) {
-            self.shared
-                .set_status(trf("Démarrage avec Windows : {}", &[&e]));
+            self.shared.error(trf("Démarrage avec Windows : {}", &[&e]));
         }
     }
 
@@ -450,7 +590,7 @@ impl PStartApp {
     fn persist_settings(&self) {
         if let Some(path) = &self.settings_path {
             if let Err(e) = self.settings.save(path) {
-                self.shared.set_status(e);
+                self.shared.error(e);
             }
         }
     }
@@ -491,7 +631,7 @@ impl PStartApp {
             let state = match update::install(&release) {
                 Ok(()) => update::State::Installed,
                 Err(e) => {
-                    shared.set_status(e.clone());
+                    shared.error(e.clone());
                     update::State::Failed(e)
                 }
             };
@@ -531,7 +671,7 @@ impl PStartApp {
         if let Some(notes) = guard.as_ref() {
             if let Err(e) = notes.save() {
                 drop(guard);
-                self.shared.set_status(e);
+                self.shared.error(e);
             }
         }
     }
@@ -648,7 +788,7 @@ impl PStartApp {
         let shared = self.shared.clone();
         std::thread::spawn(move || {
             for t in targets {
-                let ok = paths::to_native(&t).exists();
+                let ok = paths::is_url(&t) || paths::to_native(&t).exists();
                 if tx.send((t, ok)).is_err() {
                     return;
                 }
@@ -725,7 +865,7 @@ impl PStartApp {
             }
             Action::RevealPath(t) => {
                 if let Err(e) = launcher::reveal(&t) {
-                    self.shared.set_status(e);
+                    self.shared.error(e);
                 }
             }
             Action::Reload => self.reload(),
@@ -875,6 +1015,228 @@ impl PStartApp {
             }
             Action::CheckUpdate => self.check_update(false),
             Action::InstallUpdate => self.install_update(),
+            Action::Undo => self.undo_redo(false),
+            Action::Redo => self.undo_redo(true),
+            Action::LaunchGroup { path, confirmed } => {
+                let (entries, name) = {
+                    let guard = self.shared.config.lock().unwrap();
+                    let Some(cfg) = guard.as_ref() else { return };
+                    let name = cfg
+                        .item(&path)
+                        .map(|e| config::display_name(e).to_string())
+                        .unwrap_or_default();
+                    (edit::group_entries(cfg, &path), name)
+                };
+                if entries.is_empty() {
+                    self.shared
+                        .set_status(tr("Ce groupe ne contient aucun raccourci"));
+                } else if entries.len() > 8 && !confirmed {
+                    self.dialog = Some(Dialog::ConfirmLaunchGroup {
+                        path,
+                        name,
+                        count: entries.len(),
+                    });
+                } else {
+                    self.dialog = None;
+                    for p in &entries {
+                        self.shared.launch(p);
+                    }
+                    self.shared
+                        .set_status(trf("{} programmes lancés ({})", &[&entries.len(), &name]));
+                }
+            }
+            Action::NewSeparator(at) => {
+                let selected = at.or_else(|| self.selected.clone());
+                self.shared.modify(|c| {
+                    let (parent, index) = edit::insertion_point(c, selected.as_deref());
+                    edit::insert(c, &parent, index, NewItem::Separator)
+                });
+            }
+            Action::NewLink(at) => {
+                self.open_form(at, false);
+                if let Some(Dialog::Form(form)) = &mut self.dialog {
+                    form.path = "https://".into();
+                }
+            }
+            Action::AskEject => self.ask_eject(),
+            Action::Eject { force } => self.start_eject(force),
+            Action::ShowFound => {
+                if !self.found.is_empty() {
+                    let by_category = self.found.iter().any(|f| f.category.is_some());
+                    self.dialog = Some(Dialog::Import {
+                        items: self.found.iter().cloned().map(|f| (true, f)).collect(),
+                        by_category,
+                        group: tr("Nouveaux programmes").to_string(),
+                    });
+                }
+            }
+            Action::Import {
+                items,
+                by_category,
+                group,
+            } => {
+                self.dialog = None;
+                self.import(items, by_category, group);
+            }
+            Action::IgnoreFound(paths) => {
+                self.found.retain(|f| !paths.contains(&f.path));
+                self.settings.scan_ignored.extend(paths);
+                self.persist_settings();
+                self.dialog = None;
+                self.apply(Action::ShowFound);
+            }
+            Action::MakePortable => {
+                if let Some(n) = self.shared.modify(|c| Ok(edit::make_portable(c))) {
+                    self.shared
+                        .set_status(trf("{} chemins rendus relatifs", &[&n]));
+                }
+            }
+            Action::OpenLog => {
+                let path = crate::log::path();
+                if let Err(e) = launcher::launch(&path.to_string_lossy(), None) {
+                    self.shared.error(e);
+                }
+            }
+        }
+    }
+
+    fn undo_redo(&self, redo: bool) {
+        if self.shared.undo_redo(redo) {
+            self.shared.set_status(if redo {
+                tr("Modification rétablie")
+            } else {
+                tr("Modification annulée")
+            });
+        } else {
+            self.shared.set_status(tr("Rien à annuler"));
+        }
+    }
+
+    /// Ajoute les programmes trouvés, dans un groupe par catégorie ou dans
+    /// un groupe unique (une seule étape d'annulation).
+    fn import(&mut self, items: Vec<scan::Found>, by_category: bool, group: String) {
+        if items.is_empty() {
+            return;
+        }
+        let base = self.base_dir();
+        let group = if group.trim().is_empty() {
+            tr("Nouveaux programmes").to_string()
+        } else {
+            group.trim().to_string()
+        };
+        let added: Vec<String> = items.iter().map(|f| f.path.clone()).collect();
+        let count = items.len();
+        let result = self.shared.modify(|c| {
+            for f in items {
+                let name = match (&f.category, by_category) {
+                    (Some(cat), true) => cat.clone(),
+                    _ => group.clone(),
+                };
+                let parent = edit::find_or_create_group(c, &name)?;
+                edit::insert(
+                    c,
+                    &parent,
+                    None,
+                    NewItem::Entry {
+                        name: f.name,
+                        path: paths::make_relative(&f.path, &base),
+                        directory: None,
+                        options: EntryOptions::default(),
+                    },
+                )?;
+            }
+            Ok(())
+        });
+        if result.is_some() {
+            self.found.retain(|f| !added.contains(&f.path));
+            self.shared
+                .set_status(trf("{} raccourcis ajoutés", &[&count]));
+            for t in added {
+                self.refresh_target(paths::normalize(&t));
+            }
+        }
+    }
+
+    fn ask_eject(&mut self) {
+        let Some(drive) = self.shared.eject_drive() else {
+            self.shared
+                .set_status(tr("Le lecteur de PStart-rs ne peut pas être éjecté"));
+            return;
+        };
+        self.flush_notes();
+        self.dialog = Some(Dialog::Eject {
+            drive,
+            procs: eject::processes_on(drive),
+            stubborn: false,
+        });
+    }
+
+    /// Ferme les programmes de la clé en tâche de fond, puis éjecte.
+    fn start_eject(&mut self, force: bool) {
+        let Some(Dialog::Eject { drive, procs, .. }) = &self.dialog else {
+            return;
+        };
+        let drive = *drive;
+        let pids: Vec<u32> = procs.iter().map(|p| p.pid).collect();
+        *self.eject_state.lock().unwrap() = EjectState::Waiting;
+        crate::log::info(&format!(
+            "éjection de {drive}: ({} programmes ouverts)",
+            pids.len()
+        ));
+        let state = self.eject_state.clone();
+        let shared = self.shared.clone();
+        std::thread::spawn(move || {
+            if force {
+                eject::kill(&pids);
+            } else {
+                eject::close_gracefully(&pids);
+            }
+            let mut remaining = eject::processes_on(drive);
+            for _ in 0..16 {
+                if remaining.is_empty() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+                remaining = eject::processes_on(drive);
+            }
+            *state.lock().unwrap() = if remaining.is_empty() {
+                EjectState::Ready
+            } else {
+                EjectState::Remaining(remaining)
+            };
+            shared.repaint();
+        });
+    }
+
+    /// Suite de l'éjection, sur le fil de l'interface.
+    fn poll_eject(&mut self) {
+        let state = std::mem::take(&mut *self.eject_state.lock().unwrap());
+        match state {
+            EjectState::Idle => {}
+            EjectState::Waiting => *self.eject_state.lock().unwrap() = EjectState::Waiting,
+            EjectState::Remaining(procs) => {
+                if let Some(Dialog::Eject { drive, .. }) = self.dialog {
+                    self.dialog = Some(Dialog::Eject {
+                        drive,
+                        procs,
+                        stubborn: true,
+                    });
+                }
+            }
+            EjectState::Ready => {
+                let Some(Dialog::Eject { drive, .. }) = self.dialog else {
+                    return;
+                };
+                self.dialog = None;
+                match eject::eject(drive) {
+                    Ok(()) => {
+                        self.flush_notes();
+                        crate::log::info("éjection lancée, fermeture de PStart-rs");
+                        tray::quit(&self.shared);
+                    }
+                    Err(e) => self.shared.error(e),
+                }
+            }
         }
     }
 
@@ -897,7 +1259,7 @@ impl PStartApp {
                 self.shared
                     .set_status(trf("Restauré : {}", &[&names.join(", ")]));
             }
-            Err(e) => self.shared.set_status(e),
+            Err(e) => self.shared.error(e),
         }
     }
 
@@ -959,6 +1321,7 @@ impl PStartApp {
             path: String::new(),
             directory: String::new(),
             options: EntryOptions::default(),
+            icon: String::new(),
             error: None,
             focus: true,
         }));
@@ -978,6 +1341,7 @@ impl PStartApp {
                     path: String::new(),
                     directory: String::new(),
                     options: EntryOptions::default(),
+                    icon: el.attr("icon").unwrap_or("").to_string(),
                     error: None,
                     focus: true,
                 }
@@ -988,6 +1352,7 @@ impl PStartApp {
                     path: config::entry_path(el).to_string(),
                     directory: el.child_text("directory").unwrap_or("").to_string(),
                     options: EntryOptions::of(el),
+                    icon: String::new(),
                     error: None,
                     focus: true,
                 }
@@ -1065,8 +1430,42 @@ impl PStartApp {
                             "Sauvegarde créée ({} fichiers) : {}",
                             &[&n, &dest.display()],
                         )),
-                        Err(e) => self.shared.set_status(e),
+                        Err(e) => self.shared.error(e),
                     }
+                }
+            }
+            Browse::ScanFolder => {
+                let start_dir = self.scan_dir().unwrap_or_else(|| start.clone());
+                let picked = rfd::FileDialog::new()
+                    .set_title(tr("Dossier où chercher des programmes"))
+                    .set_directory(&start_dir)
+                    .pick_folder();
+                if let Some(dir) = picked {
+                    let full = dir.to_string_lossy().into_owned();
+                    let rel = paths::make_relative(&full, &base);
+                    let changed = self.settings.scan_folder.as_deref() != Some(rel.as_str());
+                    self.settings.scan_folder = Some(rel.clone());
+                    if let Some(Dialog::Settings(form)) = &mut self.dialog {
+                        form.settings.scan_folder = Some(rel);
+                    }
+                    if changed {
+                        self.persist_settings();
+                    }
+                    self.start_scan(dir, false);
+                }
+            }
+            Browse::GroupIcon => {
+                let Some(Dialog::Form(form)) = &mut self.dialog else {
+                    return;
+                };
+                let picked = rfd::FileDialog::new()
+                    .set_title(tr("Choisir une icône"))
+                    .set_directory(&start)
+                    .add_filter(tr("Icônes et programmes"), &["ico", "exe", "dll"])
+                    .add_filter(tr("Tous les fichiers"), &["*"])
+                    .pick_file();
+                if let Some(p) = picked {
+                    form.icon = paths::make_relative(&p.to_string_lossy(), &base);
                 }
             }
             Browse::BackupRestore => {
@@ -1087,7 +1486,7 @@ impl PStartApp {
                         Ok(_) => self
                             .shared
                             .set_status(trf("{} absent de l'archive", &[&backup::CONFIG])),
-                        Err(e) => self.shared.set_status(trf("restauration : {}", &[&e])),
+                        Err(e) => self.shared.error(trf("restauration : {}", &[&e])),
                     }
                 }
             }
@@ -1124,6 +1523,7 @@ impl PStartApp {
     }
 
     fn submit_form(&mut self) {
+        let base_dir = self.base_dir();
         let Some(Dialog::Form(form)) = &mut self.dialog else {
             return;
         };
@@ -1166,8 +1566,15 @@ impl PStartApp {
             }
             FormKind::RenameGroup(p) => {
                 let p = p.clone();
+                let icon = form.icon.trim().to_string();
+                if !icon.is_empty() {
+                    let target = paths::resolve(&icon, &base_dir);
+                    let generation = self.shared.generation.load(Ordering::SeqCst);
+                    icons::spawn_loader(vec![target], self.shared.clone(), generation);
+                }
                 self.shared.modify(|c| {
                     edit::rename(c, &p, &name)?;
+                    edit::set_group_icon(c, &p, Some(&icon))?;
                     Ok(p.clone())
                 })
             }
@@ -1242,6 +1649,22 @@ impl PStartApp {
                     {
                         actions.push(Action::Reload);
                     }
+                    let can_redo = !self.shared.redo.lock().unwrap().is_empty();
+                    let can_undo = !self.shared.undo.lock().unwrap().is_empty();
+                    if ui
+                        .add_enabled(can_redo, egui::Button::new("↷"))
+                        .on_hover_text(tr("Rétablir (Ctrl+Y)"))
+                        .clicked()
+                    {
+                        actions.push(Action::Redo);
+                    }
+                    if ui
+                        .add_enabled(can_undo, egui::Button::new("↶"))
+                        .on_hover_text(tr("Annuler (Ctrl+Z)"))
+                        .clicked()
+                    {
+                        actions.push(Action::Undo);
+                    }
                     ui.add_enabled_ui(cfg.is_some(), |ui| {
                         ui.menu_button("＋", |ui| {
                             if ui.button(tr("Nouveau raccourci…")).clicked() {
@@ -1250,8 +1673,18 @@ impl PStartApp {
                             if ui.button(tr("Nouveau groupe…")).clicked() {
                                 actions.push(Action::NewGroup(None));
                             }
+                            if ui.button(tr("Nouveau lien web…")).clicked() {
+                                actions.push(Action::NewLink(None));
+                            }
+                            if ui.button(tr("Séparateur")).clicked() {
+                                actions.push(Action::NewSeparator(None));
+                            }
+                            ui.separator();
                             if ui.button(tr("Ajouter des fichiers…")).clicked() {
                                 actions.push(Action::Browse(Browse::AddFiles));
+                            }
+                            if ui.button(tr("Rechercher des programmes…")).clicked() {
+                                actions.push(Action::Browse(Browse::ScanFolder));
                             }
                         })
                         .response
@@ -1321,7 +1754,7 @@ impl PStartApp {
             open: &self.open_groups,
             scroll_to: self.scroll_to_selected,
         };
-        let query = self.search.trim().to_lowercase();
+        let query = fuzzy::fold(self.search.trim());
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -1412,12 +1845,7 @@ impl PStartApp {
         let opts = cfg.search_options();
         let mut any = false;
         if opts.pstart {
-            let hits: Vec<_> = cfg
-                .flatten()
-                .into_iter()
-                .filter(|e| matches(e, query))
-                .take(MAX_HITS)
-                .collect();
+            let hits = pstart_hits(cfg, query);
             if !hits.is_empty() {
                 any = true;
                 section(ui, "PStart", tag_color(&opts, None, ui));
@@ -1435,10 +1863,9 @@ impl PStartApp {
             if !enabled {
                 continue;
             }
-            let hits: Vec<&StartItem> = start
-                .iter()
-                .filter(|i| i.source == source && i.name.to_lowercase().contains(query))
-                .take(MAX_HITS)
+            let hits: Vec<&StartItem> = start_hits(&start, query)
+                .into_iter()
+                .filter(|i| i.source == source)
                 .collect();
             if hits.is_empty() {
                 continue;
@@ -1487,6 +1914,12 @@ impl PStartApp {
             ui.weak(trf("{} raccourcis", &[&edit::count_entries(el)]));
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
+                if ui.button(tr("▶ Tout lancer")).clicked() {
+                    actions.push(Action::LaunchGroup {
+                        path: sel.clone(),
+                        confirmed: false,
+                    });
+                }
                 if ui.button(tr("＋ Raccourci")).clicked() {
                     actions.push(Action::NewEntry(Some(sel.clone())));
                 }
@@ -1546,6 +1979,11 @@ impl PStartApp {
                 if opts.autorun {
                     flags.push(tr("au démarrage"));
                 }
+                if !opts.hotkey.is_empty() {
+                    ui.label(tr("Raccourci clavier"));
+                    ui.label(&opts.hotkey);
+                    ui.end_row();
+                }
                 if !flags.is_empty() {
                     ui.label(tr("Options"));
                     ui.label(flags.join(", "));
@@ -1599,6 +2037,7 @@ impl PStartApp {
         ui.weak(tr("Glisser-déposer : réorganiser"));
         ui.weak(tr("Flèches : naviguer, ouvrir ou fermer un groupe"));
         ui.weak(tr("Ctrl+1 à 9 : lancer un favori"));
+        ui.weak(tr("Ctrl+Z / Ctrl+Y : annuler / rétablir"));
         match &self.hotkey_info {
             Some(hk) => ui.weak(trf("{} : afficher / masquer", &[&hk])),
             None => ui.weak(tr("Raccourci global : désactivé")),
@@ -1610,6 +2049,7 @@ impl PStartApp {
     fn dialog_ui(&mut self, ctx: &egui::Context, cfg: Option<&Config>, actions: &mut Vec<Action>) {
         let base = cfg.map(|c| c.base_dir.clone()).unwrap_or_default();
         let upd = self.shared.update.lock().unwrap().clone();
+        let waiting = matches!(*self.eject_state.lock().unwrap(), EjectState::Waiting);
         let Some(dialog) = &mut self.dialog else {
             return;
         };
@@ -1683,6 +2123,36 @@ impl PStartApp {
                         }
                     });
                 }
+                Dialog::ConfirmLaunchGroup { path, name, count } => {
+                    ui.heading(tr("Lancer le groupe"));
+                    ui.add_space(8.0);
+                    ui.label(trf(
+                        "Lancer les {} programmes du groupe « {} » ?",
+                        &[count, name],
+                    ));
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(tr("Lancer")).clicked() {
+                            actions.push(Action::LaunchGroup {
+                                path: path.clone(),
+                                confirmed: true,
+                            });
+                        }
+                        if ui.button(tr("Annuler")).clicked() {
+                            actions.push(Action::CloseDialog);
+                        }
+                    });
+                }
+                Dialog::Eject {
+                    drive,
+                    procs,
+                    stubborn,
+                } => eject_ui(ui, *drive, procs, *stubborn, waiting, actions),
+                Dialog::Import {
+                    items,
+                    by_category,
+                    group,
+                } => import_ui(ui, items, by_category, group, actions),
                 Dialog::ConfirmRestore { file, contents } => {
                     ui.heading(tr("Restaurer une sauvegarde"));
                     ui.add_space(8.0);
@@ -1762,6 +2232,21 @@ impl PStartApp {
         });
         if let Some(n) = favorite {
             actions.push(Action::LaunchFavorite(n));
+        }
+        let (undo, redo) = ctx.input(|i| {
+            let z = i.modifiers.command && i.key_pressed(egui::Key::Z);
+            (
+                z && !i.modifiers.shift,
+                (z && i.modifiers.shift) || (i.modifiers.command && i.key_pressed(egui::Key::Y)),
+            )
+        });
+        if !typing {
+            if undo {
+                actions.push(Action::Undo);
+            }
+            if redo {
+                actions.push(Action::Redo);
+            }
         }
         let search_focused = self
             .search_id
@@ -1866,7 +2351,7 @@ impl PStartApp {
 
     /// Entrée : lance la sélection, ou le premier résultat de recherche.
     fn enter_pressed(&self, actions: &mut Vec<Action>) {
-        let q = self.search.trim().to_lowercase();
+        let q = fuzzy::fold(self.search.trim());
         if q.is_empty() {
             if let Some(p) = self.selected.clone() {
                 actions.push(Action::Launch(p));
@@ -1884,18 +2369,15 @@ impl PStartApp {
         if let Some(cfg) = guard.as_ref() {
             let opts = cfg.search_options();
             if opts.pstart {
-                if let Some(e) = cfg.flatten().into_iter().find(|e| matches(e, &q)) {
+                if let Some(e) = pstart_hits(cfg, &q).into_iter().next() {
                     actions.push(Action::Launch(e.path));
                     return;
                 }
             }
             let start = self.shared.start_menu.lock().unwrap();
-            let first = start.iter().find(|i| {
-                let enabled = match i.source {
-                    Source::CurrentUser => opts.current_user,
-                    Source::AllUsers => opts.all_users,
-                };
-                enabled && i.name.to_lowercase().contains(&q)
+            let first = start_hits(&start, &q).into_iter().find(|i| match i.source {
+                Source::CurrentUser => opts.current_user,
+                Source::AllUsers => opts.all_users,
             });
             if let Some(i) = first {
                 actions.push(Action::LaunchExternal {
@@ -1947,13 +2429,37 @@ impl eframe::App for PStartApp {
                 window::hide();
             }
         }
+        if let Some(h) = &mut self.hotkeys {
+            let problems = h.sync(&self.shared);
+            if !problems.is_empty() {
+                self.shared.error(problems.join(" ; "));
+            }
+        }
+        self.poll_scan();
+        self.poll_eject();
+        if self.shared.ask_eject.swap(false, Ordering::SeqCst) {
+            self.ask_eject();
+        }
+        // PStart.xml modifié ailleurs : rechargement (pas pendant une saisie).
+        let editing = matches!(
+            self.dialog,
+            Some(Dialog::Form(_)) | Some(Dialog::Settings(_))
+        );
+        if !editing && self.shared.file_changed.swap(false, Ordering::SeqCst) {
+            crate::log::info("PStart.xml modifié par un autre programme : rechargement");
+            let selected = self.selected.clone();
+            self.reload();
+            self.selected = selected;
+            self.shared
+                .set_status(tr("PStart.xml modifié par un autre programme : rechargé"));
+        }
         // Mise à jour installée : relance puis fermeture.
         if *self.shared.update.lock().unwrap() == update::State::Installed {
             *self.shared.update.lock().unwrap() = update::State::Idle;
             self.flush_notes();
             match update::relaunch() {
                 Ok(()) => tray::quit(&self.shared),
-                Err(e) => self.shared.set_status(e),
+                Err(e) => self.shared.error(e),
             }
         }
         self.handle_close(&ctx);
@@ -1974,6 +2480,13 @@ impl eframe::App for PStartApp {
             });
             egui::Panel::bottom("status").show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    if !self.found.is_empty()
+                        && ui
+                            .small_button(trf("＋ {} nouveaux programmes", &[&self.found.len()]))
+                            .clicked()
+                    {
+                        actions.push(Action::ShowFound);
+                    }
                     if let update::State::Available(r) = &*shared.update.lock().unwrap() {
                         if ui
                             .small_button(format!("⬆ {}", r.version))
@@ -2030,6 +2543,20 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
             }
             submit |= name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.end_row();
+            if matches!(form.kind, FormKind::RenameGroup(_)) {
+                ui.label(tr("Icône"));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut form.icon)
+                            .desired_width(240.0)
+                            .hint_text(tr("(aucune)")),
+                    );
+                    if ui.button(tr("Parcourir…")).clicked() {
+                        actions.push(Action::Browse(Browse::GroupIcon));
+                    }
+                });
+                ui.end_row();
+            }
             if !form.is_group() {
                 ui.label(tr("Chemin"));
                 ui.horizontal(|ui| {
@@ -2079,6 +2606,18 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
                 ui.label(tr("Description"));
                 ui.add(egui::TextEdit::singleline(&mut o.description).desired_width(300.0));
                 ui.end_row();
+                ui.label(tr("Raccourci clavier"));
+                let valid = o.hotkey.trim().is_empty() || hotkey::parse(&o.hotkey).is_ok();
+                let mut hk = egui::TextEdit::singleline(&mut o.hotkey)
+                    .desired_width(160.0)
+                    .hint_text(tr("ex. Ctrl+Alt+V"));
+                if !valid {
+                    hk = hk.text_color(ui.visuals().error_fg_color);
+                }
+                ui.add(hk).on_hover_text(tr(
+                    "Lance ce programme depuis n'importe où, même fenêtre masquée",
+                ));
+                ui.end_row();
                 ui.label(tr("Fenêtre"));
                 egui::ComboBox::from_id_salt("windowstate")
                     .selected_text(o.window.label())
@@ -2103,6 +2642,9 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
     if !form.is_group() {
         ui.weak(tr(
             "Les chemins sur le même lecteur sont enregistrés en relatif.",
+        ));
+        ui.weak(tr(
+            "Variables : %PSTART% (dossier de PStart.xml), %DRIVE% (son lecteur), %USERPROFILE%…",
         ));
     }
     if let Some(e) = &form.error {
@@ -2486,10 +3028,70 @@ fn settings_ui(
             });
             ui.end_row();
 
-            ui.label(tr("Lecteur"));
-            if ui.button(tr("Corriger une lettre de lecteur…")).clicked() {
-                actions.push(Action::OpenDriveFix);
+            ui.label(tr("Chemins"));
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(tr("Corriger une lettre de lecteur…")).clicked() {
+                    actions.push(Action::OpenDriveFix);
+                }
+                if ui
+                    .button(tr("Rendre les chemins portables"))
+                    .on_hover_text(tr(
+                        "Les chemins absolus sur le lecteur de PStart.xml deviennent relatifs",
+                    ))
+                    .clicked()
+                {
+                    actions.push(Action::MakePortable);
+                }
+            });
+            ui.end_row();
+
+            ui.label(tr("Programmes"));
+            ui.vertical(|ui| {
+                if ui
+                    .button(tr("Rechercher des programmes…"))
+                    .on_hover_text(tr(
+                        "PortableApps.com, exécutables et raccourcis .lnk d'un dossier",
+                    ))
+                    .clicked()
+                {
+                    actions.push(Action::Browse(Browse::ScanFolder));
+                }
+                if let Some(dir) = &s.scan_folder {
+                    ui.weak(trf("Dossier : {}", &[dir]));
+                }
+                ui.add_enabled(
+                    s.scan_folder.is_some(),
+                    egui::Checkbox::new(
+                        &mut s.scan_on_start,
+                        tr("Signaler les nouveaux programmes au démarrage"),
+                    ),
+                );
+                if !s.scan_ignored.is_empty()
+                    && ui
+                        .small_button(trf(
+                            "Oublier les {} programmes ignorés",
+                            &[&s.scan_ignored.len()],
+                        ))
+                        .clicked()
+                {
+                    s.scan_ignored.clear();
+                }
+            });
+            ui.end_row();
+
+            ui.label(tr("Clé USB"));
+            if ui.button(tr("Éjecter la clé…")).clicked() {
+                actions.push(Action::AskEject);
             }
+            ui.end_row();
+
+            ui.label(tr("Journal"));
+            ui.horizontal(|ui| {
+                if ui.button(tr("Ouvrir le journal")).clicked() {
+                    actions.push(Action::OpenLog);
+                }
+                ui.weak(crate::log::FILE_NAME);
+            });
             ui.end_row();
 
             ui.label(tr("Mises à jour"));
@@ -2597,8 +3199,184 @@ fn color_swatch(ui: &mut egui::Ui, color: IconColor, selected: bool) -> egui::Re
     resp.on_hover_text(color.label())
 }
 
-fn matches(e: &config::FlatEntry, query: &str) -> bool {
-    e.name.to_lowercase().contains(query) || e.target.to_lowercase().contains(query)
+/// Raccourcis correspondant à la recherche, du plus pertinent au moins
+/// pertinent (tolérance aux fautes, initiales, usage).
+fn pstart_hits(cfg: &Config, query: &str) -> Vec<config::FlatEntry> {
+    let mut hits: Vec<(i32, config::FlatEntry)> = cfg
+        .flatten()
+        .into_iter()
+        .filter_map(|e| fuzzy::rank(query, &e.name, &e.target, e.runcount).map(|s| (s, e)))
+        .collect();
+    hits.sort_by_key(|h| std::cmp::Reverse(h.0));
+    hits.into_iter().take(MAX_HITS).map(|(_, e)| e).collect()
+}
+
+fn start_hits<'a>(items: &'a [StartItem], query: &str) -> Vec<&'a StartItem> {
+    let mut hits: Vec<(i32, &StartItem)> = items
+        .iter()
+        .filter_map(|i| fuzzy::score(query, &i.name).map(|s| (s, i)))
+        .collect();
+    hits.sort_by_key(|h| std::cmp::Reverse(h.0));
+    hits.into_iter().take(MAX_HITS).map(|(_, i)| i).collect()
+}
+
+/// Icônes de groupe (chemins résolus) à charger.
+fn group_icons(cfg: &Config) -> Vec<String> {
+    fn walk(el: &Element, base: &str, out: &mut Vec<String>) {
+        for c in el.children.iter().filter(|c| c.name == "files") {
+            if let Some(i) = c.attr("icon").filter(|i| !i.trim().is_empty()) {
+                out.push(paths::resolve(i, base));
+            }
+            walk(c, base, out);
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(files) = cfg.files() {
+        walk(files, &cfg.base_dir, &mut out);
+    }
+    out
+}
+
+/// Éjection de la clé : programmes ouverts, puis confirmation.
+fn eject_ui(
+    ui: &mut egui::Ui,
+    drive: char,
+    procs: &[eject::Proc],
+    stubborn: bool,
+    waiting: bool,
+    actions: &mut Vec<Action>,
+) {
+    ui.heading(trf("Éjecter la clé ({}:)", &[&drive]));
+    ui.add_space(8.0);
+    if waiting {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(tr("Fermeture des programmes…"));
+        });
+        return;
+    }
+    if procs.is_empty() {
+        ui.label(tr("Aucun programme n'est ouvert depuis la clé."));
+    } else {
+        ui.label(if stubborn {
+            tr("Ces programmes ne se sont pas fermés (enregistrement en attente ?) :")
+        } else {
+            tr("Programmes ouverts depuis la clé :")
+        });
+        egui::ScrollArea::vertical()
+            .max_height(180.0)
+            .show(ui, |ui| {
+                for p in procs {
+                    ui.label(format!("• {}", p.name())).on_hover_text(&p.path);
+                }
+            });
+    }
+    ui.add_space(6.0);
+    ui.weak(tr("PStart-rs se fermera, puis Windows éjectera la clé."));
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        let label = if procs.is_empty() {
+            tr("Éjecter")
+        } else {
+            tr("Fermer les programmes et éjecter")
+        };
+        if ui.button(label).clicked() {
+            actions.push(Action::Eject { force: false });
+        }
+        if stubborn
+            && ui
+                .button(tr("Forcer la fermeture"))
+                .on_hover_text(tr("Les modifications non enregistrées seront perdues"))
+                .clicked()
+        {
+            actions.push(Action::Eject { force: true });
+        }
+        if ui.button(tr("Annuler")).clicked() {
+            actions.push(Action::CloseDialog);
+        }
+    });
+}
+
+/// Ajout des programmes trouvés dans un dossier.
+fn import_ui(
+    ui: &mut egui::Ui,
+    items: &mut [(bool, scan::Found)],
+    by_category: &mut bool,
+    group: &mut String,
+    actions: &mut Vec<Action>,
+) {
+    ui.heading(trf("{} programmes trouvés", &[&items.len()]));
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        if ui.small_button(tr("Tout cocher")).clicked() {
+            items.iter_mut().for_each(|i| i.0 = true);
+        }
+        if ui.small_button(tr("Tout décocher")).clicked() {
+            items.iter_mut().for_each(|i| i.0 = false);
+        }
+    });
+    egui::ScrollArea::vertical()
+        .max_height(260.0)
+        .show(ui, |ui| {
+            for (on, f) in items.iter_mut() {
+                ui.horizontal(|ui| {
+                    ui.checkbox(on, &f.name).on_hover_text(&f.path);
+                    if let Some(c) = &f.category {
+                        ui.weak(format!("({c})"));
+                    }
+                });
+            }
+        });
+    ui.add_space(6.0);
+    let has_categories = items.iter().any(|(_, f)| f.category.is_some());
+    ui.add_enabled(
+        has_categories,
+        egui::Checkbox::new(by_category, tr("Un groupe par catégorie (ou dossier)")),
+    );
+    ui.horizontal(|ui| {
+        ui.label(if *by_category && has_categories {
+            tr("Groupe pour les autres :")
+        } else {
+            tr("Groupe :")
+        });
+        ui.text_edit_singleline(group);
+    });
+    ui.add_space(12.0);
+    let chosen: Vec<scan::Found> = items
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, f)| f.clone())
+        .collect();
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                !chosen.is_empty(),
+                egui::Button::new(tr("Ajouter la sélection")),
+            )
+            .clicked()
+        {
+            actions.push(Action::Import {
+                items: chosen.clone(),
+                by_category: *by_category,
+                group: group.clone(),
+            });
+        }
+        if ui
+            .add_enabled(
+                !chosen.is_empty(),
+                egui::Button::new(tr("Ignorer la sélection")),
+            )
+            .on_hover_text(tr("Ne plus signaler ces programmes"))
+            .clicked()
+        {
+            actions.push(Action::IgnoreFound(
+                chosen.iter().map(|f| f.path.clone()).collect(),
+            ));
+        }
+        if ui.button(tr("Plus tard")).clicked() {
+            actions.push(Action::CloseDialog);
+        }
+    });
 }
 
 fn tag_color(opts: &SearchOptions, source: Option<Source>, ui: &egui::Ui) -> egui::Color32 {
@@ -2672,29 +3450,52 @@ impl Rows<'_> {
                     let key = group_key(keys);
                     let count = edit::count_entries(child);
                     let title = format!("{}  ({count})", config::display_name(child));
-                    let resp = egui::CollapsingHeader::new(title)
-                        .id_salt(path.clone())
-                        .open(Some(self.open.contains(&key)))
-                        .show(ui, |ui| {
+                    let open = self.open.contains(&key);
+                    let selected = self.selected.as_deref() == Some(path.as_slice());
+                    let icon = child
+                        .attr("icon")
+                        .filter(|i| !i.trim().is_empty())
+                        .map(|i| paths::resolve(i, &cfg.base_dir))
+                        .and_then(|t| self.textures.get(&t));
+                    let id = ui.make_persistent_id(("pstart-group", path.clone()));
+                    let mut state =
+                        egui::collapsing_header::CollapsingState::load_with_default_open(
+                            ui.ctx(),
+                            id,
+                            open,
+                        );
+                    state.set_open(open);
+                    let (toggle, header, _) = state
+                        .show_header(ui, |ui| {
+                            if let Some(tex) = icon {
+                                ui.add(icon_image(tex, ICON_SIZE));
+                            }
+                            ui.selectable_label(selected, title)
+                        })
+                        .body(|ui| {
                             self.tree(ui, cfg, child, path, keys, actions);
                         });
                     keys.pop();
-                    let header = resp.header_response.interact(egui::Sense::drag());
-                    if self.selected.as_deref() == Some(path.as_slice()) {
-                        ui.painter().rect_stroke(
-                            header.rect,
-                            3.0,
-                            ui.visuals().selection.stroke,
-                            egui::StrokeKind::Inside,
-                        );
-                        if self.scroll_to {
-                            header.scroll_to_me(None);
-                        }
+                    let header = header.inner.interact(egui::Sense::drag());
+                    if selected && self.scroll_to {
+                        header.scroll_to_me(None);
                     }
-                    if header.clicked() {
+                    if toggle.clicked() || header.clicked() {
                         actions.push(Action::ToggleGroup(key));
                     }
                     self.group_header(ui, &header, path, actions);
+                }
+                "separator" => {
+                    let resp = ui
+                        .add(egui::Separator::default().spacing(10.0))
+                        .interact(egui::Sense::click());
+                    resp.context_menu(|ui| {
+                        if ui.button(tr("Supprimer le séparateur")).clicked() {
+                            actions.push(Action::Delete(path.clone()));
+                            ui.close();
+                        }
+                    });
+                    self.drop_target(ui, &resp, path, actions);
                 }
                 "file" => {
                     self.visible.borrow_mut().push(path.clone());
@@ -2730,12 +3531,28 @@ impl Rows<'_> {
             actions.push(Action::Select(path.to_vec()));
         }
         header.context_menu(|ui| {
+            if ui.button(tr("▶ Tout lancer")).clicked() {
+                actions.push(Action::LaunchGroup {
+                    path: path.to_vec(),
+                    confirmed: false,
+                });
+                ui.close();
+            }
+            ui.separator();
             if ui.button(tr("Nouveau raccourci ici…")).clicked() {
                 actions.push(Action::NewEntry(Some(path.to_vec())));
                 ui.close();
             }
             if ui.button(tr("Nouveau groupe ici…")).clicked() {
                 actions.push(Action::NewGroup(Some(path.to_vec())));
+                ui.close();
+            }
+            if ui.button(tr("Nouveau lien web ici…")).clicked() {
+                actions.push(Action::NewLink(Some(path.to_vec())));
+                ui.close();
+            }
+            if ui.button(tr("Séparateur ici")).clicked() {
+                actions.push(Action::NewSeparator(Some(path.to_vec())));
                 ui.close();
             }
             ui.separator();

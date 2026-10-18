@@ -22,6 +22,9 @@ pub struct Config {
     /// Dossier de référence des chemins relatifs (format Windows).
     pub base_dir: String,
     backed_up: bool,
+    /// Date de modification du fichier au chargement ou au dernier
+    /// enregistrement : sert à détecter une modification extérieure.
+    pub mtime: Option<std::time::SystemTime>,
 }
 
 /// Une entrée aplatie (pour la recherche et les classements).
@@ -90,6 +93,8 @@ pub struct EntryOptions {
     pub autorun: bool,
     pub admin: bool,
     pub favorite: bool,
+    /// Raccourci clavier global qui lance ce programme (`Ctrl+Alt+V`).
+    pub hotkey: String,
 }
 
 impl EntryOptions {
@@ -102,6 +107,7 @@ impl EntryOptions {
             autorun: is_true(&text("autorun")),
             admin: is_true(&text("runasadmin")),
             favorite: is_true(&text("favorite")),
+            hotkey: text("globalhotkey"),
         }
     }
 }
@@ -111,7 +117,7 @@ fn is_true(s: &str) -> bool {
 }
 
 /// Ordre des balises d'un raccourci, pour insérer au bon endroit.
-pub const ENTRY_TAGS: [&str; 10] = [
+pub const ENTRY_TAGS: [&str; 11] = [
     "path",
     "parameters",
     "directory",
@@ -120,6 +126,7 @@ pub const ENTRY_TAGS: [&str; 10] = [
     "autorun",
     "runasadmin",
     "favorite",
+    "globalhotkey",
     "runcount",
     "rundate",
 ];
@@ -162,6 +169,7 @@ pub fn set_entry_options(el: &mut Element, o: &EntryOptions) {
     set_tag(el, "autorun", flag(o.autorun).as_deref());
     set_tag(el, "runasadmin", flag(o.admin).as_deref());
     set_tag(el, "favorite", flag(o.favorite).as_deref());
+    set_tag(el, "globalhotkey", opt(&o.hotkey).as_deref());
 }
 
 impl Config {
@@ -185,6 +193,7 @@ impl Config {
             file: file.to_path_buf(),
             base_dir,
             backed_up: false,
+            mtime: modified(file),
         })
     }
 
@@ -195,6 +204,7 @@ impl Config {
         Ok(Config {
             root,
             file: PathBuf::new(),
+            mtime: None,
             base_dir: base_dir.to_string(),
             backed_up: true,
         })
@@ -217,7 +227,16 @@ impl Config {
         let tmp = with_suffix(&self.file, ".tmp");
         fs::write(&tmp, data.as_bytes()).map_err(|e| format!("{} : {e}", tmp.display()))?;
         fs::rename(&tmp, &self.file).map_err(|e| format!("{} : {e}", self.file.display()))?;
+        self.mtime = modified(&self.file);
         Ok(())
+    }
+
+    /// Le fichier a-t-il été modifié par un autre programme ?
+    pub fn changed_on_disk(&self) -> bool {
+        match (modified(&self.file), self.mtime) {
+            (Some(now), Some(known)) => now != known,
+            _ => false,
+        }
     }
 
     /// Élément racine des raccourcis (`<start><files>`).
@@ -249,6 +268,9 @@ impl Config {
     /// Dossier de travail d'une entrée : `<directory>` s'il est renseigné,
     /// sinon le dossier de la cible.
     pub fn working_dir(&self, entry: &Element) -> Option<String> {
+        if paths::is_url(entry_path(entry)) {
+            return None;
+        }
         match entry.child_text("directory") {
             Some(d) if !d.trim().is_empty() => Some(paths::resolve(d, &self.base_dir)),
             _ => paths::parent(&self.resolve(entry)),
@@ -443,6 +465,10 @@ fn set_child(el: &mut Element, name: &str, value: &str, before: &[&str]) {
         .position(|c| before.contains(&c.name.as_str()))
         .unwrap_or(el.children.len());
     el.children.insert(pos, Element::leaf(name, value));
+}
+
+fn modified(file: &Path) -> Option<std::time::SystemTime> {
+    fs::metadata(file).and_then(|m| m.modified()).ok()
 }
 
 /// Décode le fichier : UTF-8 (avec ou sans BOM), UTF-16 LE/BE, sinon

@@ -12,7 +12,10 @@
 
 /// Résout `raw` par rapport au dossier `base` (dossier du fichier PStart.xml).
 pub fn resolve(raw: &str, base: &str) -> String {
-    let raw = expand_env(raw.trim());
+    if is_url(raw) {
+        return raw.trim().to_string();
+    }
+    let raw = expand_env(&expand_vars(raw.trim(), base));
     let raw = raw.replace('/', "\\");
     let base = base.replace('/', "\\");
 
@@ -30,6 +33,37 @@ pub fn resolve(raw: &str, base: &str) -> String {
         format!("{}\\{}", base.trim_end_matches('\\'), raw)
     };
     normalize(&joined)
+}
+
+/// Adresse web ou autre protocole (`https://…`, `mailto:` exclu).
+pub fn is_url(s: &str) -> bool {
+    let s = s.trim();
+    s.find("://").is_some_and(|i| {
+        i > 1
+            && s[..i]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+')
+    })
+}
+
+/// Variables propres à PStart-rs : `%PSTART%` (dossier de PStart.xml) et
+/// `%DRIVE%` (son lecteur, ex. `E:`). Insensibles à la casse.
+pub fn expand_vars(raw: &str, base: &str) -> String {
+    if !raw.contains('%') {
+        return raw.to_string();
+    }
+    let base = base.replace('/', "\\");
+    let drive = prefix_of(&base).unwrap_or_default();
+    let mut out = raw.to_string();
+    for (var, value) in [
+        ("%PSTART%", base.trim_end_matches('\\').to_string()),
+        ("%DRIVE%", drive),
+    ] {
+        while let Some(i) = out.to_ascii_uppercase().find(var) {
+            out.replace_range(i..i + var.len(), &value);
+        }
+    }
+    out
 }
 
 /// `true` si le chemin commence par une lettre de lecteur (`C:`).
@@ -198,6 +232,24 @@ pub fn to_native(p: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn variables() {
+        let base = "E:\\Portable";
+        assert_eq!(
+            resolve("%PSTART%\\VLC\\vlc.exe", base),
+            "E:\\Portable\\VLC\\vlc.exe"
+        );
+        assert_eq!(resolve("%drive%\\Outils\\a.exe", base), "E:\\Outils\\a.exe");
+        assert_eq!(expand_vars("100%", base), "100%");
+        assert!(is_url("https://example.com/a?b=c"));
+        assert!(!is_url("C:\\x"));
+        assert!(!is_url("://x"));
+        assert_eq!(
+            resolve(" https://example.com ", base),
+            "https://example.com"
+        );
+    }
 
     #[test]
     fn drives() {

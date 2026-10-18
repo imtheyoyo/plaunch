@@ -23,6 +23,8 @@ const MAX_SIZE: u64 = 64 * 1024 * 1024;
 pub struct Release {
     pub version: String,
     pub url: String,
+    /// Fichier `pstart-rs.exe.sha256` publié avec la version.
+    pub checksum_url: Option<String>,
     pub page: String,
 }
 
@@ -63,7 +65,12 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
+    let mut builder = ureq::AgentBuilder::new();
+    match native_tls::TlsConnector::new() {
+        Ok(tls) => builder = builder.tls_connector(std::sync::Arc::new(tls)),
+        Err(e) => crate::log::error(&format!("TLS : {e}")),
+    }
+    builder
         .timeout_connect(Duration::from_secs(10))
         .timeout(Duration::from_secs(120))
         .user_agent(concat!("pstart-rs/", env!("CARGO_PKG_VERSION")))
@@ -79,15 +86,23 @@ pub fn parse_release(json: &str) -> Result<Release, String> {
         .ok_or_else(|| tr("réponse inattendue de GitHub").to_string())?
         .to_string();
     let page = v["html_url"].as_str().unwrap_or(RELEASES_PAGE).to_string();
-    let url = v["assets"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|a| a["name"].as_str() == Some(ASSET))
-        .and_then(|a| a["browser_download_url"].as_str())
-        .ok_or_else(|| trf("{} absent de la version publiée", &[&ASSET]))?
-        .to_string();
-    Ok(Release { version, url, page })
+    let asset = |name: &str| {
+        v["assets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|a| a["name"].as_str() == Some(name))
+            .and_then(|a| a["browser_download_url"].as_str())
+            .map(str::to_string)
+    };
+    let url = asset(ASSET).ok_or_else(|| trf("{} absent de la version publiée", &[&ASSET]))?;
+    let checksum_url = asset(&format!("{ASSET}.sha256"));
+    Ok(Release {
+        version,
+        url,
+        checksum_url,
+        page,
+    })
 }
 
 /// Renvoie la dernière version si elle est plus récente que celle-ci.
@@ -103,22 +118,65 @@ pub fn check() -> Result<Option<Release>, String> {
     Ok(is_newer(&release.version, current_version()).then_some(release))
 }
 
-/// Télécharge la version puis remplace l'exécutable courant.
-pub fn install(release: &Release) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {
     let resp = agent()
-        .get(&release.url)
+        .get(url)
         .call()
         .map_err(|e| trf("téléchargement impossible : {}", &[&e]))?;
     let mut data = Vec::new();
     resp.into_reader()
-        .take(MAX_SIZE)
+        .take(limit)
         .read_to_end(&mut data)
         .map_err(|e| trf("téléchargement impossible : {}", &[&e]))?;
+    Ok(data)
+}
+
+/// Empreinte SHA-256 en hexadécimal minuscule.
+pub fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Lit un fichier `.sha256` (« empreinte  nom » ou empreinte seule).
+pub fn parse_checksum(text: &str) -> Option<String> {
+    let h = text.split_whitespace().next()?.to_ascii_lowercase();
+    (h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())).then_some(h)
+}
+
+/// Vérifie l'exécutable téléchargé : format et empreinte publiée.
+pub fn verify(data: &[u8], expected: &str) -> Result<(), String> {
     // Un exécutable Windows commence par « MZ ».
     if data.len() < 64 * 1024 || !data.starts_with(b"MZ") {
         return Err(tr("le fichier téléchargé n'est pas un exécutable valide").into());
     }
+    let actual = sha256_hex(data);
+    if actual != expected {
+        crate::log::error(&format!(
+            "empreinte invalide : attendu {expected}, obtenu {actual}"
+        ));
+        return Err(tr("empreinte SHA-256 incorrecte : mise à jour refusée").into());
+    }
+    Ok(())
+}
+
+/// Télécharge la version, vérifie son empreinte puis remplace l'exécutable.
+pub fn install(release: &Release) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let Some(sum_url) = &release.checksum_url else {
+        return Err(tr("pas d'empreinte publiée pour cette version : mise à jour manuelle").into());
+    };
+    let sum = download(sum_url, 4096)?;
+    let expected = parse_checksum(&String::from_utf8_lossy(&sum))
+        .ok_or_else(|| tr("empreinte publiée illisible").to_string())?;
+    let data = download(&release.url, MAX_SIZE)?;
+    verify(&data, &expected)?;
+    crate::log::info(&format!(
+        "mise à jour vers {} vérifiée ({expected})",
+        release.version
+    ));
     replace_exe(&exe, &data)
 }
 
@@ -190,8 +248,37 @@ mod tests {
         let r = parse_release(json).unwrap();
         assert_eq!(r.version, "v0.7.0");
         assert_eq!(r.url, "https://x/p.exe");
+        assert_eq!(r.checksum_url, None);
+        let json = r#"{"tag_name":"v0.7.0","assets":[
+            {"name":"pstart-rs.exe","browser_download_url":"https://x/p.exe"},
+            {"name":"pstart-rs.exe.sha256","browser_download_url":"https://x/p.sha"}]}"#;
+        assert_eq!(
+            parse_release(json).unwrap().checksum_url.as_deref(),
+            Some("https://x/p.sha")
+        );
         assert!(parse_release(r#"{"tag_name":"v1","assets":[]}"#).is_err());
         assert!(parse_release("pas du json").is_err());
+    }
+
+    #[test]
+    fn checksums() {
+        // Vecteur de test officiel : SHA-256("abc").
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let h = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD  pstart-rs.exe";
+        assert_eq!(
+            parse_checksum(h).as_deref(),
+            Some(sha256_hex(b"abc").as_str())
+        );
+        assert_eq!(parse_checksum("pas une empreinte"), None);
+        let mut exe = b"MZ".to_vec();
+        exe.resize(70 * 1024, 7);
+        let good = sha256_hex(&exe);
+        assert!(verify(&exe, &good).is_ok());
+        assert!(verify(&exe, &sha256_hex(b"autre")).is_err());
+        assert!(verify(b"MZ court", &sha256_hex(b"MZ court")).is_err());
     }
 
     #[test]
