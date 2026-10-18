@@ -2,13 +2,19 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 
 use eframe::egui;
 
 use crate::config::{self, Config, ItemPath};
-use crate::launcher;
-use crate::paths;
+use crate::settings::{self, Settings};
+use crate::state::Shared;
+use crate::xml::Element;
+use crate::{hotkey, icons, launcher, paths, tray, window};
+
+const ICON_SIZE: f32 = 18.0;
 
 #[derive(PartialEq, Clone, Copy)]
 enum View {
@@ -17,72 +23,132 @@ enum View {
     Recent,
 }
 
-/// Action demandée pendant le dessin, appliquée ensuite (pour éviter
-/// d'emprunter la configuration en écriture pendant qu'on la parcourt).
+/// Action demandée pendant le dessin, appliquée ensuite, une fois la
+/// configuration déverrouillée.
 enum Action {
     Select(ItemPath),
     Launch(ItemPath),
     Reveal(ItemPath),
+    Reload,
+    Open(PathBuf),
 }
 
+type Textures = HashMap<String, egui::TextureHandle>;
+
 pub struct PStartApp {
-    config: Option<Config>,
+    shared: Arc<Shared>,
+    settings: Settings,
     load_error: Option<String>,
     search: String,
     selected: Option<ItemPath>,
     view: View,
-    status: String,
     /// Existence des cibles, calculée en tâche de fond (les chemins réseau
     /// peuvent être lents à interroger).
     exists: HashMap<String, bool>,
     exists_rx: Option<Receiver<(String, bool)>>,
+    textures: Textures,
     focus_search: bool,
+    first_frame: bool,
+    tray: Option<tray::Tray>,
+    hotkey_info: Option<String>,
+    _hotkey: Option<global_hotkey::GlobalHotKeyManager>,
 }
 
 impl PStartApp {
-    pub fn new(file: Option<PathBuf>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, file: Option<PathBuf>) -> Self {
+        let shared = Arc::new(Shared::default());
+        let _ = shared.ctx.set(cc.egui_ctx.clone());
+        window::capture(cc);
+
+        let settings = file
+            .as_deref()
+            .map(|f| settings::load(&settings::path_for(f)))
+            .unwrap_or_default();
+
         let mut app = PStartApp {
-            config: None,
+            shared,
+            settings,
             load_error: None,
             search: String::new(),
             selected: None,
             view: View::Tree,
-            status: String::new(),
             exists: HashMap::new(),
             exists_rx: None,
+            textures: HashMap::new(),
             focus_search: true,
+            first_frame: true,
+            tray: None,
+            hotkey_info: None,
+            _hotkey: None,
         };
         if let Some(f) = file {
             app.open(&f);
         }
+        app.init_desktop_integration();
         app
+    }
+
+    /// Icône de notification et raccourci global (Windows uniquement).
+    fn init_desktop_integration(&mut self) {
+        if !cfg!(windows) {
+            return;
+        }
+        let mut problems = Vec::new();
+        if self.settings.tray {
+            match tray::Tray::new(&self.shared) {
+                Ok(t) => self.tray = Some(t),
+                Err(e) => problems.push(e),
+            }
+        }
+        if let Some(spec) = self.settings.hotkey.clone() {
+            match hotkey::register(&spec, self.shared.clone()) {
+                Ok(m) => {
+                    self._hotkey = Some(m);
+                    self.hotkey_info = Some(spec);
+                }
+                Err(e) => problems.push(e),
+            }
+        }
+        if !problems.is_empty() {
+            self.shared.set_status(problems.join(" ; "));
+        }
     }
 
     fn open(&mut self, file: &Path) {
         match Config::load(file) {
             Ok(cfg) => {
-                let n = cfg.flatten().len();
-                self.status = format!("{n} raccourcis chargés");
-                self.start_existence_check(&cfg);
-                self.config = Some(cfg);
+                let generation = self.shared.next_generation();
+                let targets: Vec<String> = cfg.flatten().into_iter().map(|e| e.target).collect();
+                self.shared
+                    .set_status(format!("{} raccourcis chargés", targets.len()));
+                self.start_existence_check(targets.clone());
+                self.shared.icons.lock().unwrap().clear();
+                self.textures.clear();
+                *self.shared.config.lock().unwrap() = Some(cfg);
+                icons::spawn_loader(targets, self.shared.clone(), generation);
                 self.load_error = None;
                 self.selected = None;
             }
-            Err(e) => {
-                self.load_error = Some(e);
-            }
+            Err(e) => self.load_error = Some(e),
         }
     }
 
     fn reload(&mut self) {
-        if let Some(file) = self.config.as_ref().map(|c| c.file.clone()) {
+        let file = self
+            .shared
+            .config
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.file.clone());
+        if let Some(file) = file {
             self.open(&file);
         }
     }
 
-    fn start_existence_check(&mut self, cfg: &Config) {
-        let targets: Vec<String> = cfg.flatten().into_iter().map(|e| e.target).collect();
+    fn start_existence_check(&mut self, targets: Vec<String>) {
         let (tx, rx) = mpsc::channel();
+        let shared = self.shared.clone();
         std::thread::spawn(move || {
             for t in targets {
                 let ok = paths::to_native(&t).exists();
@@ -90,6 +156,7 @@ impl PStartApp {
                     break;
                 }
             }
+            shared.repaint();
         });
         self.exists.clear();
         self.exists_rx = Some(rx);
@@ -97,9 +164,37 @@ impl PStartApp {
 
     fn poll_existence(&mut self) {
         if let Some(rx) = &self.exists_rx {
-            while let Ok((t, ok)) = rx.try_recv() {
-                self.exists.insert(t, ok);
+            loop {
+                match rx.try_recv() {
+                    Ok((t, ok)) => {
+                        self.exists.insert(t, ok);
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        self.exists_rx = None;
+                        break;
+                    }
+                }
             }
+        }
+    }
+
+    /// Transforme en textures les icônes nouvellement extraites.
+    fn sync_textures(&mut self, ctx: &egui::Context) {
+        let icons = self.shared.icons.lock().unwrap();
+        if icons.len() == self.textures.len() {
+            return;
+        }
+        for (target, img) in icons.iter() {
+            if self.textures.contains_key(target) {
+                continue;
+            }
+            let image = egui::ColorImage::from_rgba_unmultiplied(
+                [img.width as usize, img.height as usize],
+                &img.rgba,
+            );
+            let tex = ctx.load_texture(target, image, egui::TextureOptions::LINEAR);
+            self.textures.insert(target.clone(), tex);
         }
     }
 
@@ -108,43 +203,29 @@ impl PStartApp {
             Action::Select(p) => self.selected = Some(p),
             Action::Launch(p) => {
                 self.selected = Some(p.clone());
-                self.launch(&p);
+                self.shared.launch(&p);
             }
             Action::Reveal(p) => {
-                let Some(cfg) = &self.config else { return };
-                let Some(el) = cfg.item(&p) else { return };
-                let target = cfg.resolve(el);
-                if let Err(e) = launcher::reveal(&target) {
-                    self.status = e;
-                }
-            }
-        }
-    }
-
-    fn launch(&mut self, path: &[usize]) {
-        let Some(cfg) = &mut self.config else { return };
-        let Some(el) = cfg.item(path) else { return };
-        let name = config::display_name(el).to_string();
-        let target = cfg.resolve(el);
-        let workdir = cfg.working_dir(el);
-        match launcher::launch(&target, workdir.as_deref()) {
-            Ok(()) => {
-                let now = chrono::Local::now().format(config::DATE_FORMAT).to_string();
-                if let Some(el) = cfg.item_mut(path) {
-                    config::record_run(el, &now);
-                }
-                self.status = match cfg.save() {
-                    Ok(()) => format!("Lancé : {name}"),
-                    Err(e) => format!("Lancé : {name} (statistiques non enregistrées : {e})"),
+                let target = {
+                    let guard = self.shared.config.lock().unwrap();
+                    guard
+                        .as_ref()
+                        .and_then(|c| c.item(&p).map(|el| c.resolve(el)))
                 };
+                if let Some(t) = target {
+                    if let Err(e) = launcher::reveal(&t) {
+                        self.shared.set_status(e);
+                    }
+                }
             }
-            Err(e) => self.status = format!("Échec : {e}"),
+            Action::Reload => self.reload(),
+            Action::Open(p) => self.open(&p),
         }
     }
 
     // ---- Dessin -------------------------------------------------------
 
-    fn top_bar(&mut self, ui: &mut egui::Ui) {
+    fn top_bar(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         ui.horizontal(|ui| {
             let search = egui::TextEdit::singleline(&mut self.search)
                 .hint_text("Rechercher… (Ctrl+F)")
@@ -165,19 +246,24 @@ impl PStartApp {
                     .on_hover_text("Recharger le fichier")
                     .clicked()
                 {
-                    self.reload();
+                    actions.push(Action::Reload);
                 }
             });
         });
     }
 
-    fn central(&mut self, ui: &mut egui::Ui) -> Vec<Action> {
+    fn central(&self, ui: &mut egui::Ui, cfg: Option<&Config>) -> Vec<Action> {
         let mut actions = Vec::new();
-        let Some(cfg) = &self.config else {
+        let Some(cfg) = cfg else {
             self.welcome(ui);
             return actions;
         };
-        let single = cfg.single_click();
+        let rows = Rows {
+            selected: &self.selected,
+            exists: &self.exists,
+            textures: &self.textures,
+            single: cfg.single_click(),
+        };
         let query = self.search.trim().to_lowercase();
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -192,15 +278,7 @@ impl PStartApp {
                         ui.weak("Aucun résultat.");
                     }
                     for e in &hits {
-                        flat_row(
-                            ui,
-                            e,
-                            &self.selected,
-                            &self.exists,
-                            single,
-                            true,
-                            &mut actions,
-                        );
+                        rows.flat(ui, e, true, &mut actions);
                     }
                     return;
                 }
@@ -208,16 +286,7 @@ impl PStartApp {
                     View::Tree => {
                         if let Some(files) = cfg.files() {
                             let mut path = Vec::new();
-                            tree(
-                                ui,
-                                cfg,
-                                files,
-                                &mut path,
-                                &self.selected,
-                                &self.exists,
-                                single,
-                                &mut actions,
-                            );
+                            rows.tree(ui, cfg, files, &mut path, &mut actions);
                         }
                     }
                     View::MostUsed => {
@@ -225,15 +294,7 @@ impl PStartApp {
                         all.retain(|e| e.runcount > 0);
                         all.sort_by_key(|e| std::cmp::Reverse(e.runcount));
                         for e in all.iter().take(40) {
-                            flat_row(
-                                ui,
-                                e,
-                                &self.selected,
-                                &self.exists,
-                                single,
-                                false,
-                                &mut actions,
-                            );
+                            rows.flat(ui, e, false, &mut actions);
                         }
                     }
                     View::Recent => {
@@ -242,15 +303,7 @@ impl PStartApp {
                         // Le format AAAA/MM/JJ HH:MM:SS se trie comme du texte.
                         all.sort_by(|a, b| b.rundate.cmp(&a.rundate));
                         for e in all.iter().take(40) {
-                            flat_row(
-                                ui,
-                                e,
-                                &self.selected,
-                                &self.exists,
-                                single,
-                                false,
-                                &mut actions,
-                            );
+                            rows.flat(ui, e, false, &mut actions);
                         }
                     }
                 }
@@ -272,10 +325,15 @@ impl PStartApp {
         });
     }
 
-    fn details(&mut self, ui: &mut egui::Ui) -> Vec<Action> {
+    fn details(&self, ui: &mut egui::Ui, cfg: Option<&Config>) -> Vec<Action> {
         let mut actions = Vec::new();
-        let (Some(cfg), Some(sel)) = (&self.config, &self.selected) else {
+        let Some(cfg) = cfg else {
+            return actions;
+        };
+        let Some(sel) = &self.selected else {
             ui.weak("Sélectionnez un raccourci.");
+            ui.add_space(16.0);
+            self.shortcuts_help(ui);
             return actions;
         };
         let Some(el) = cfg.item(sel) else {
@@ -286,7 +344,15 @@ impl PStartApp {
             return actions;
         }
         let target = cfg.resolve(el);
-        ui.heading(config::display_name(el));
+        ui.horizontal(|ui| {
+            if let Some(tex) = self.textures.get(&target) {
+                ui.add(
+                    egui::Image::from_texture(egui::load::SizedTexture::from_handle(tex))
+                        .fit_to_exact_size(egui::vec2(32.0, 32.0)),
+                );
+            }
+            ui.heading(config::display_name(el));
+        });
         ui.add_space(6.0);
         egui::Grid::new("details")
             .num_columns(2)
@@ -329,13 +395,24 @@ impl PStartApp {
         actions
     }
 
-    fn handle_input(&mut self, ctx: &egui::Context) -> Vec<Action> {
-        let mut actions = Vec::new();
+    fn shortcuts_help(&self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Raccourcis").strong());
+        ui.weak("Entrée : lancer");
+        ui.weak("Ctrl+F : rechercher, Échap : effacer");
+        match &self.hotkey_info {
+            Some(hk) => ui.weak(format!("{hk} : afficher / masquer")),
+            None => ui.weak("Raccourci global : désactivé"),
+        };
+        ui.add_space(8.0);
+        ui.weak(format!("Réglages : {}", settings::FILE_NAME));
+    }
+
+    fn handle_input(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
         // Fichier déposé sur la fenêtre.
         let dropped: Option<PathBuf> =
             ctx.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()));
         if let Some(p) = dropped {
-            self.open(&p);
+            actions.push(Action::Open(p));
         }
         let (ctrl_f, escape, enter) = ctx.input(|i| {
             (
@@ -348,27 +425,38 @@ impl PStartApp {
             self.focus_search = true;
         }
         if escape {
+            if self.search.is_empty() && self.tray.is_some() {
+                window::hide();
+            }
             self.search.clear();
         }
         if enter {
             // Entrée : lance la sélection, ou le premier résultat de recherche.
-            let target = self.selected.clone().or_else(|| {
-                let q = self.search.trim().to_lowercase();
-                if q.is_empty() {
-                    return None;
-                }
-                self.config
-                    .as_ref()?
-                    .flatten()
-                    .into_iter()
-                    .find(|e| matches(e, &q))
+            let q = self.search.trim().to_lowercase();
+            let target = if !q.is_empty() {
+                let guard = self.shared.config.lock().unwrap();
+                guard
+                    .as_ref()
+                    .and_then(|c| c.flatten().into_iter().find(|e| matches(e, &q)))
                     .map(|e| e.path)
-            });
+            } else {
+                self.selected.clone()
+            };
             if let Some(p) = target {
                 actions.push(Action::Launch(p));
             }
         }
-        actions
+    }
+
+    fn handle_close(&mut self, ctx: &egui::Context) {
+        if !ctx.input(|i| i.viewport().close_requested()) {
+            return;
+        }
+        let quitting = self.shared.quitting.load(Ordering::SeqCst);
+        if !quitting && self.settings.close_to_tray && self.tray.is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            window::hide();
+        }
     }
 }
 
@@ -376,45 +464,60 @@ impl eframe::App for PStartApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_existence();
-        let mut actions = self.handle_input(&ctx);
+        self.sync_textures(&ctx);
+        if let Some(t) = &mut self.tray {
+            t.refresh(&self.shared);
+        }
+        if self.shared.focus_search.swap(false, Ordering::SeqCst) {
+            self.focus_search = true;
+        }
+        if self.first_frame {
+            self.first_frame = false;
+            if self.settings.start_hidden && self.tray.is_some() {
+                window::hide();
+            }
+        }
+        self.handle_close(&ctx);
 
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.add_space(4.0);
-            self.top_bar(ui);
-            ui.add_space(2.0);
-        });
-        egui::Panel::bottom("status").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(&self.status);
-                if let Some(cfg) = &self.config {
-                    ui.separator();
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(cfg.file.display().to_string()).weak(),
-                        )
-                        .truncate(),
-                    )
-                    .on_hover_text(cfg.file.display().to_string());
-                }
+        let mut actions = Vec::new();
+        self.handle_input(&ctx, &mut actions);
+
+        let shared = self.shared.clone();
+        let status = shared.status.lock().unwrap().clone();
+        {
+            let guard = shared.config.lock().unwrap();
+            let cfg = guard.as_ref();
+
+            egui::Panel::top("top").show(ui, |ui| {
+                ui.add_space(4.0);
+                self.top_bar(ui, &mut actions);
+                ui.add_space(2.0);
             });
-        });
-        egui::Panel::right("details")
-            .resizable(true)
-            .default_size(240.0)
-            .show(ui, |ui| {
-                ui.add_space(6.0);
-                actions.extend(self.details(ui));
+            egui::Panel::bottom("status").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(&status);
+                    if let Some(cfg) = cfg {
+                        let file = cfg.file.display().to_string();
+                        ui.separator();
+                        ui.add(egui::Label::new(egui::RichText::new(&file).weak()).truncate())
+                            .on_hover_text(&file);
+                    }
+                });
             });
-        egui::CentralPanel::default().show(ui, |ui| {
-            actions.extend(self.central(ui));
-        });
+            egui::Panel::right("details")
+                .resizable(true)
+                .default_size(250.0)
+                .show(ui, |ui| {
+                    ui.add_space(6.0);
+                    actions.extend(self.details(ui, cfg));
+                });
+            egui::CentralPanel::default().show(ui, |ui| {
+                actions.extend(self.central(ui, cfg));
+            });
+        }
 
         for a in actions {
             self.apply(a);
-        }
-        // Rafraîchit tant que la vérification des fichiers est en cours.
-        if self.exists_rx.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
     }
 }
@@ -423,51 +526,130 @@ fn matches(e: &config::FlatEntry, query: &str) -> bool {
     e.name.to_lowercase().contains(query) || e.target.to_lowercase().contains(query)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn tree(
-    ui: &mut egui::Ui,
-    cfg: &Config,
-    el: &crate::xml::Element,
-    path: &mut ItemPath,
-    selected: &Option<ItemPath>,
-    exists: &HashMap<String, bool>,
+/// Contexte commun au dessin des lignes.
+struct Rows<'a> {
+    selected: &'a Option<ItemPath>,
+    exists: &'a HashMap<String, bool>,
+    textures: &'a Textures,
     single: bool,
-    actions: &mut Vec<Action>,
-) {
-    for (i, child) in el.children.iter().enumerate() {
-        path.push(i);
-        match child.name.as_str() {
-            "files" => {
-                let count = count_entries(child);
-                let title = format!("{}  ({count})", config::display_name(child));
-                egui::CollapsingHeader::new(title)
-                    .id_salt(path.clone())
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        tree(ui, cfg, child, path, selected, exists, single, actions);
-                    });
+}
+
+impl Rows<'_> {
+    fn tree(
+        &self,
+        ui: &mut egui::Ui,
+        cfg: &Config,
+        el: &Element,
+        path: &mut ItemPath,
+        actions: &mut Vec<Action>,
+    ) {
+        for (i, child) in el.children.iter().enumerate() {
+            path.push(i);
+            match child.name.as_str() {
+                "files" => {
+                    let count = count_entries(child);
+                    let title = format!("{}  ({count})", config::display_name(child));
+                    egui::CollapsingHeader::new(title)
+                        .id_salt(path.clone())
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            self.tree(ui, cfg, child, path, actions);
+                        });
+                }
+                "file" => {
+                    let target = cfg.resolve(child);
+                    self.row(
+                        ui,
+                        config::display_name(child),
+                        &target,
+                        None,
+                        path,
+                        actions,
+                    );
+                }
+                _ => {}
             }
-            "file" => {
-                let target = cfg.resolve(child);
-                let missing = exists.get(&target) == Some(&false);
-                entry_row(
-                    ui,
-                    config::display_name(child),
-                    None,
-                    missing,
-                    selected.as_deref() == Some(path.as_slice()),
-                    path,
-                    single,
-                    actions,
-                );
-            }
-            _ => {}
+            path.pop();
         }
-        path.pop();
+    }
+
+    fn flat(
+        &self,
+        ui: &mut egui::Ui,
+        e: &config::FlatEntry,
+        show_groups: bool,
+        actions: &mut Vec<Action>,
+    ) {
+        let info = if show_groups {
+            e.groups.join(" › ")
+        } else {
+            match &e.rundate {
+                Some(d) => format!("{} × · {}", e.runcount, d),
+                None => format!("{} ×", e.runcount),
+            }
+        };
+        self.row(ui, &e.name, &e.target, Some(&info), &e.path, actions);
+    }
+
+    fn row(
+        &self,
+        ui: &mut egui::Ui,
+        name: &str,
+        target: &str,
+        info: Option<&str>,
+        path: &[usize],
+        actions: &mut Vec<Action>,
+    ) {
+        let missing = self.exists.get(target) == Some(&false);
+        let is_selected = self.selected.as_deref() == Some(path);
+        let mut text = egui::RichText::new(name);
+        if missing {
+            text = text.color(ui.visuals().weak_text_color()).strikethrough();
+        }
+        ui.horizontal(|ui| {
+            match self.textures.get(target) {
+                Some(tex) => {
+                    ui.add(
+                        egui::Image::from_texture(egui::load::SizedTexture::from_handle(tex))
+                            .fit_to_exact_size(egui::vec2(ICON_SIZE, ICON_SIZE)),
+                    );
+                }
+                None if !self.textures.is_empty() => {
+                    ui.add_space(ICON_SIZE + ui.spacing().item_spacing.x);
+                }
+                None => {}
+            }
+            let resp = ui.selectable_label(is_selected, text);
+            let resp = if missing {
+                resp.on_hover_text("Cible introuvable")
+            } else {
+                resp
+            };
+            if let Some(info) = info {
+                if !info.is_empty() {
+                    ui.weak(info);
+                }
+            }
+            if resp.double_clicked() || (self.single && resp.clicked()) {
+                actions.push(Action::Launch(path.to_vec()));
+            } else if resp.clicked() {
+                actions.push(Action::Select(path.to_vec()));
+            }
+            resp.context_menu(|ui| {
+                if ui.button("Lancer").clicked() {
+                    actions.push(Action::Launch(path.to_vec()));
+                    ui.close();
+                }
+                if ui.button("Ouvrir l'emplacement").clicked() {
+                    actions.push(Action::Reveal(path.to_vec()));
+                    ui.close();
+                }
+            });
+        });
     }
 }
 
-fn count_entries(el: &crate::xml::Element) -> usize {
+fn count_entries(el: &Element) -> usize {
     el.children
         .iter()
         .map(|c| match c.name.as_str() {
@@ -476,78 +658,4 @@ fn count_entries(el: &crate::xml::Element) -> usize {
             _ => 0,
         })
         .sum()
-}
-
-fn flat_row(
-    ui: &mut egui::Ui,
-    e: &config::FlatEntry,
-    selected: &Option<ItemPath>,
-    exists: &HashMap<String, bool>,
-    single: bool,
-    show_groups: bool,
-    actions: &mut Vec<Action>,
-) {
-    let info = if show_groups {
-        e.groups.join(" › ")
-    } else {
-        match &e.rundate {
-            Some(d) => format!("{} × · {}", e.runcount, d),
-            None => format!("{} ×", e.runcount),
-        }
-    };
-    entry_row(
-        ui,
-        &e.name,
-        Some(&info),
-        exists.get(&e.target) == Some(&false),
-        selected.as_deref() == Some(e.path.as_slice()),
-        &e.path,
-        single,
-        actions,
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn entry_row(
-    ui: &mut egui::Ui,
-    name: &str,
-    info: Option<&str>,
-    missing: bool,
-    is_selected: bool,
-    path: &[usize],
-    single: bool,
-    actions: &mut Vec<Action>,
-) {
-    let mut text = egui::RichText::new(name);
-    if missing {
-        text = text.color(ui.visuals().weak_text_color()).strikethrough();
-    }
-    ui.horizontal(|ui| {
-        let resp = ui.selectable_label(is_selected, text);
-        let resp = if missing {
-            resp.on_hover_text("Cible introuvable")
-        } else {
-            resp
-        };
-        if let Some(info) = info {
-            if !info.is_empty() {
-                ui.weak(info);
-            }
-        }
-        if resp.double_clicked() || (single && resp.clicked()) {
-            actions.push(Action::Launch(path.to_vec()));
-        } else if resp.clicked() {
-            actions.push(Action::Select(path.to_vec()));
-        }
-        resp.context_menu(|ui| {
-            if ui.button("Lancer").clicked() {
-                actions.push(Action::Launch(path.to_vec()));
-                ui.close();
-            }
-            if ui.button("Ouvrir l'emplacement").clicked() {
-                actions.push(Action::Reveal(path.to_vec()));
-                ui.close();
-            }
-        });
-    });
 }
