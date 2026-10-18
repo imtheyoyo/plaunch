@@ -288,7 +288,8 @@ pub struct PStartApp {
     eject_state: Arc<std::sync::Mutex<EjectState>>,
     /// Nouveaux programmes détectés au démarrage.
     found: Vec<scan::Found>,
-    found_rx: Option<Receiver<Vec<scan::Found>>>,
+    /// Résultat d'une recherche en cours, et si elle est silencieuse.
+    found_rx: Option<(Receiver<Vec<scan::Found>>, bool)>,
 }
 
 impl PStartApp {
@@ -434,7 +435,7 @@ impl PStartApp {
             (known, self.settings.scan_ignored.clone())
         };
         let (tx, rx) = mpsc::channel();
-        self.found_rx = Some(rx);
+        self.found_rx = Some((rx, quiet));
         if !quiet {
             self.shared.set_status(tr("Recherche de programmes…"));
         }
@@ -451,7 +452,10 @@ impl PStartApp {
     }
 
     fn poll_scan(&mut self) {
-        let Some(rx) = &self.found_rx else { return };
+        let Some((rx, quiet)) = &self.found_rx else {
+            return;
+        };
+        let quiet = *quiet;
         let Ok(found) = rx.try_recv() else { return };
         self.found_rx = None;
         if found.is_empty() {
@@ -460,8 +464,9 @@ impl PStartApp {
         self.shared
             .set_status(trf("{} nouveaux programmes détectés", &[&found.len()]));
         self.found = found;
-        // Résultat d'une recherche demandée : affichage immédiat.
-        if self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_))) {
+        // Recherche demandée : affichage immédiat. Au démarrage, seul le
+        // bouton de la barre d'état le signale.
+        if !quiet && (self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_)))) {
             self.apply(Action::ShowFound);
         }
     }
@@ -1620,22 +1625,8 @@ impl PStartApp {
                     }
                 });
             }
-            let search = egui::TextEdit::singleline(&mut self.search)
-                .hint_text(tr("Rechercher… (Ctrl+F)"))
-                .desired_width(f32::INFINITY);
-            let resp = ui.add(search);
-            self.search_id = Some(resp.id);
-            if self.focus_search {
-                resp.request_focus();
-                self.focus_search = false;
-            }
-        });
-        if !compact {
-            ui.horizontal(|ui| {
-                for v in View::ALL {
-                    ui.selectable_value(&mut self.view, v, v.label());
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !compact {
                     if ui.button("⚙").on_hover_text(tr("Réglages")).clicked() {
                         actions.push(Action::OpenSettings);
                     }
@@ -1690,7 +1681,23 @@ impl PStartApp {
                         .response
                         .on_hover_text(tr("Ajouter (vous pouvez aussi déposer des fichiers ici)"));
                     });
-                });
+                }
+                let search = egui::TextEdit::singleline(&mut self.search)
+                    .hint_text(tr("Rechercher… (Ctrl+F)"))
+                    .desired_width(ui.available_width());
+                let resp = ui.add(search);
+                self.search_id = Some(resp.id);
+                if self.focus_search {
+                    resp.request_focus();
+                    self.focus_search = false;
+                }
+            });
+        });
+        if !compact {
+            ui.horizontal_wrapped(|ui| {
+                for v in View::ALL {
+                    ui.selectable_value(&mut self.view, v, v.label());
+                }
             });
         }
         if let Some(cfg) = cfg {
@@ -2240,7 +2247,12 @@ impl PStartApp {
                 (z && i.modifiers.shift) || (i.modifiers.command && i.key_pressed(egui::Key::Y)),
             )
         });
-        if !typing {
+        // Dans la recherche vide, Ctrl+Z annule aussi la dernière modification.
+        let search_empty = self.search.is_empty()
+            && self
+                .search_id
+                .is_some_and(|id| ctx.memory(|m| m.has_focus(id)));
+        if !typing || search_empty {
             if undo {
                 actions.push(Action::Undo);
             }

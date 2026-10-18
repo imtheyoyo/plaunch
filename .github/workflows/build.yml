@@ -19,7 +19,16 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Tests
-        run: cargo test --locked
+        shell: pwsh
+        run: |
+          # Erreurs de compilation et tests en échec publiés en annotations.
+          $env:CARGO_TERM_COLOR = "never"
+          $out = cargo test --locked 2>&1 | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          $out | Write-Output
+          $out | Where-Object { $_ -match '^(error|warning)|panicked|FAILED|^\s+-->' } |
+            Select-Object -First 30 | ForEach-Object { Write-Output "::error::$_" }
+          exit $code
       - name: Clippy
         shell: pwsh
         run: |
