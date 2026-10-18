@@ -8,6 +8,49 @@ use crate::i18n::{tr, trf};
 use crate::notes::{Note, INPUT_FORMAT};
 use crate::state::Shared;
 
+/// Forme des rappels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReminderStyle {
+    /// Notification Windows (reste affichée jusqu'à fermeture).
+    #[default]
+    Toast,
+    /// Boîte de message au premier plan.
+    Dialog,
+    Both,
+}
+
+impl ReminderStyle {
+    pub const ALL: [ReminderStyle; 3] = [
+        ReminderStyle::Toast,
+        ReminderStyle::Dialog,
+        ReminderStyle::Both,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ReminderStyle::Toast => "toast",
+            ReminderStyle::Dialog => "dialog",
+            ReminderStyle::Both => "both",
+        }
+    }
+
+    pub fn from_key(s: &str) -> ReminderStyle {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "dialog" | "boite" | "messagebox" => ReminderStyle::Dialog,
+            "both" | "les deux" => ReminderStyle::Both,
+            _ => ReminderStyle::Toast,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ReminderStyle::Toast => tr("Notification Windows"),
+            ReminderStyle::Dialog => tr("Boîte de message"),
+            ReminderStyle::Both => tr("Les deux"),
+        }
+    }
+}
+
 /// Vérifie les alarmes au démarrage (alarmes manquées) puis toutes les 15 s.
 pub fn spawn(shared: Arc<Shared>) {
     std::thread::spawn(move || loop {
@@ -49,7 +92,8 @@ fn check(shared: &Shared) {
     for (note, next) in fired {
         let title = display_title(&note);
         shared.set_status(trf("Rappel : {}", &[&title]));
-        notify(&note, next);
+        let style = *shared.reminders.lock().unwrap();
+        notify(&note, next, style);
     }
 }
 
@@ -67,15 +111,26 @@ fn display_title(note: &Note) -> String {
         .to_string()
 }
 
-fn notify(note: &Note, next: Option<String>) {
+fn notify(note: &Note, next: Option<String>, style: ReminderStyle) {
     let title = display_title(note);
+    let text = note.text.trim();
+    let text = if text == title { "" } else { text };
+    let next = next.map(|n| trf("Prochain rappel : {}", &[&n]));
+    let mut toast_ok = false;
+    if matches!(style, ReminderStyle::Toast | ReminderStyle::Both) {
+        toast_ok = imp::toast(&title, text, next.as_deref()).is_ok();
+    }
+    if style == ReminderStyle::Toast && toast_ok {
+        return;
+    }
+    // Boîte de message (choisie, ou notification impossible).
     let mut body = title.clone();
-    if !note.text.trim().is_empty() && note.text.trim() != title {
+    if !text.is_empty() {
         body.push_str("\n\n");
-        body.push_str(note.text.trim());
+        body.push_str(text);
     }
     if let Some(n) = next {
-        body.push_str(&format!("\n\n{}", trf("Prochain rappel : {}", &[&n])));
+        body.push_str(&format!("\n\n{n}"));
     }
     // Une boîte par rappel, dans son propre thread : elle ne bloque rien.
     std::thread::spawn(move || imp::message_box(tr("PStart-rs · Rappel"), &body));
@@ -86,6 +141,25 @@ mod imp {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         MessageBoxW, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST,
     };
+
+    /// Notification Windows au format « rappel » : elle reste affichée
+    /// jusqu'à ce que l'utilisateur la ferme. L'identifiant d'application de
+    /// PowerShell évite toute installation (raccourci, registre).
+    pub fn toast(title: &str, text: &str, next: Option<&str>) -> Result<(), String> {
+        use tauri_winrt_notification::{Duration, Scenario, Sound, Toast};
+        let mut t = Toast::new(Toast::POWERSHELL_APP_ID)
+            .title(title)
+            .duration(Duration::Long)
+            .scenario(Scenario::Reminder)
+            .sound(Some(Sound::Reminder));
+        if !text.is_empty() {
+            t = t.text1(text);
+        }
+        if let Some(n) = next {
+            t = t.text2(n);
+        }
+        t.show().map_err(|e| e.to_string())
+    }
 
     pub fn message_box(caption: &str, text: &str) {
         let caption: Vec<u16> = caption.encode_utf16().chain(std::iter::once(0)).collect();
@@ -104,6 +178,11 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
+    pub fn toast(title: &str, text: &str, _next: Option<&str>) -> Result<(), String> {
+        eprintln!("{title} : {text}");
+        Ok(())
+    }
+
     pub fn message_box(caption: &str, text: &str) {
         eprintln!("{caption} : {text}");
     }

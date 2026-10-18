@@ -376,6 +376,157 @@ const EN: &[(&str, &str)] = &[
         "Start with Windows disabled",
     ),
     ("icône de notification : {}", "notification icon: {}"),
+    // v0.6
+    ("(aucun)", "(none)"),
+    (
+        "Aucun : tous les raccourcis vérifiés sont valides.",
+        "None: every checked shortcut is valid.",
+    ),
+    ("Aucun lancement enregistré.", "No launches recorded."),
+    (
+        "Ctrl+1 à 9 : lancer un favori",
+        "Ctrl+1 to 9: launch a favorite",
+    ),
+    ("Dernier lancement", "Last launch"),
+    ("Démarrages de PStart", "PStart starts"),
+    (
+        "Flèches : naviguer, ouvrir ou fermer un groupe",
+        "Arrows: move, open or close a group",
+    ),
+    ("Groupes", "Groups"),
+    ("Introuvables", "Missing"),
+    ("Jamais lancés ({})", "Never launched ({})"),
+    ("Lancements enregistrés", "Recorded launches"),
+    (
+        "Lancer au démarrage de PStart-rs",
+        "Launch when PStart-rs starts",
+    ),
+    ("Les plus lancés", "Most launched"),
+    ("Raccourcis introuvables", "Missing shortcuts"),
+    (
+        "Retire ces raccourcis de PStart.xml",
+        "Removes these shortcuts from PStart.xml",
+    ),
+    ("Retirer des favoris", "Remove from favorites"),
+    (
+        "Supprimer les {} raccourcis dont la cible est introuvable ?",
+        "Delete the {} shortcuts whose target is missing?",
+    ),
+    ("Tout supprimer…", "Delete all…"),
+    ("ce mois-ci", "this month"),
+    ("cette année", "this year"),
+    ("cette semaine", "this week"),
+    ("{} (vérification…)", "{} (checking…)"),
+    ("★ Retirer des favoris", "★ Remove from favorites"),
+    ("Ajouter aux favoris", "Add to favorites"),
+    ("Ajouté aux favoris", "Added to favorites"),
+    ("Ancienne lettre", "Old letter"),
+    ("Boîte de message", "Message box"),
+    ("Corriger", "Fix"),
+    ("Corriger une lettre de lecteur…", "Fix a drive letter…"),
+    ("Description", "Description"),
+    ("Enregistrer la sauvegarde", "Save the backup"),
+    ("Exporter…", "Export…"),
+    ("Exécuter en tant qu'administrateur", "Run as administrator"),
+    ("Fenêtre", "Window"),
+    ("Fenêtre complète", "Full window"),
+    ("Fichiers remplacés : {}", "Files replaced: {}"),
+    ("GitHub inaccessible : {}", "GitHub unreachable: {}"),
+    ("Ignorer", "Ignore"),
+    ("Installer la version {}", "Install version {}"),
+    ("Lecteur", "Drive"),
+    (
+        "Les chemins absolus qui commencent par l'ancienne lettre seront modifiés.",
+        "Absolute paths starting with the old letter will be changed.",
+    ),
+    ("Les deux", "Both"),
+    (
+        "Les fichiers actuels sont conservés en « .avant-restauration ».",
+        "Current files are kept as “.avant-restauration”.",
+    ),
+    ("Lettre de lecteur", "Drive letter"),
+    ("Mises à jour", "Updates"),
+    ("Mode compact", "Compact mode"),
+    (
+        "Mode compact (recherche et liste)",
+        "Compact mode (search and list)",
+    ),
+    ("Nettoyage", "Clean-up"),
+    ("Notification Windows", "Windows notification"),
+    ("Nouveautés", "What's new"),
+    ("Nouvelle lettre", "New letter"),
+    (
+        "Nouvelle version : ouvrir les réglages",
+        "New version: open settings",
+    ),
+    (
+        "Nouvelle version disponible : {}",
+        "New version available: {}",
+    ),
+    ("Options", "Options"),
+    ("Outils", "Tools"),
+    (
+        "PStart.xml, notes et réglages dans un fichier zip",
+        "PStart.xml, notes and settings in a zip file",
+    ),
+    ("Paramètres", "Parameters"),
+    (
+        "Pensez à brancher les lecteurs réseau ou amovibles avant.",
+        "Connect network or removable drives first.",
+    ),
+    ("Rappels", "Reminders"),
+    ("Restaurer", "Restore"),
+    ("Restaurer une sauvegarde", "Restore a backup"),
+    ("Restaurer…", "Restore…"),
+    ("Restauré : {}", "Restored: {}"),
+    ("Retiré des favoris", "Removed from favorites"),
+    ("Sauvegarde", "Backup"),
+    (
+        "Sauvegarde créée ({} fichiers) : {}",
+        "Backup created ({} files): {}",
+    ),
+    ("Statistiques", "Statistics"),
+    ("Sur tous les écrans", "On every screen"),
+    (
+        "Téléchargement de la version {}…",
+        "Downloading version {}…",
+    ),
+    ("Version {}", "Version {}"),
+    ("Vérifier au démarrage", "Check at startup"),
+    ("Vérifier maintenant", "Check now"),
+    ("administrateur", "administrator"),
+    ("agrandie", "maximized"),
+    ("au démarrage", "at startup"),
+    (
+        "le fichier téléchargé n'est pas un exécutable valide",
+        "the downloaded file is not a valid executable",
+    ),
+    ("normale", "normal"),
+    ("plus d'un an", "over a year ago"),
+    ("remplacement impossible : {}", "cannot replace: {}"),
+    ("restauration : {}", "restore: {}"),
+    ("réduite", "minimized"),
+    (
+        "réponse inattendue de GitHub",
+        "unexpected answer from GitHub",
+    ),
+    ("sauvegarde : {}", "backup: {}"),
+    ("téléchargement impossible : {}", "download failed: {}"),
+    ("téléchargement…", "downloading…"),
+    ("{} absent de l'archive", "{} missing from the archive"),
+    (
+        "{} absent de la version publiée",
+        "{} missing from the published release",
+    ),
+    ("{} chemins concernés", "{} paths affected"),
+    (
+        "{} chemins corrigés ({}: → {}:)",
+        "{} paths fixed ({}: → {}:)",
+    ),
+    ("{} raccourcis supprimés", "{} shortcuts deleted"),
+    ("Épingler dans les favoris", "Pin to favorites"),
+    ("à jour", "up to date"),
+    ("☆ Ajouter aux favoris", "☆ Add to favorites"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (
@@ -385,7 +536,10 @@ const EN: &[(&str, &str)] = &[
     ("mémoire insuffisante", "out of memory"),
     ("fichier introuvable", "file not found"),
     ("chemin introuvable", "path not found"),
-    ("accès refusé", "access denied"),
+    (
+        "accès refusé (ou élévation annulée)",
+        "access denied (or elevation cancelled)",
+    ),
     ("exécutable invalide", "invalid executable"),
     ("violation de partage", "sharing violation"),
     (
@@ -462,11 +616,19 @@ mod tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
         let mut missing = Vec::new();
         let mut found = 0;
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_none_or(|e| e != "rs") {
-                continue;
+        let mut files = Vec::new();
+        let mut dirs = vec![std::path::PathBuf::from(dir)];
+        while let Some(d) = dirs.pop() {
+            for entry in std::fs::read_dir(d).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    files.push(path);
+                }
             }
+        }
+        for path in files {
             let src = std::fs::read_to_string(&path).unwrap();
             for lit in literals(&src) {
                 found += 1;

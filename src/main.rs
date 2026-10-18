@@ -4,6 +4,7 @@
 mod alarms;
 mod app;
 mod autostart;
+mod backup;
 mod config;
 mod edit;
 mod hotcorner;
@@ -18,6 +19,7 @@ mod settings;
 mod startmenu;
 mod state;
 mod tray;
+mod update;
 mod window;
 mod xml;
 
@@ -41,10 +43,21 @@ fn find_config() -> Option<PathBuf> {
 
 fn main() -> eframe::Result {
     // Second lancement : on réveille la fenêtre existante et on s'arrête.
-    if !instance::acquire() {
+    // Après une mise à jour, l'ancienne instance met un instant à se fermer.
+    let restarted = std::env::var_os(update::RESTART_ENV).is_some();
+    let mut acquired = instance::acquire();
+    for _ in 0..50 {
+        if acquired || !restarted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        acquired = instance::acquire();
+    }
+    if !acquired {
         window::activate_existing();
         return Ok(());
     }
+    update::cleanup();
 
     let file = find_config();
     let settings_path = file.as_deref().map(settings::path_for);

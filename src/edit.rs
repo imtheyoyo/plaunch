@@ -4,7 +4,7 @@
 //! Les positions sont des [`ItemPath`] (indices depuis `<start><files>`).
 //! Les éléments créés suivent l'ordre de balises de PStart.
 
-use crate::config::{Config, ItemPath};
+use crate::config::{self, Config, EntryOptions, ItemPath};
 use crate::i18n::tr;
 use crate::xml::Element;
 
@@ -14,6 +14,7 @@ pub enum NewItem {
         name: String,
         path: String,
         directory: Option<String>,
+        options: EntryOptions,
     },
     Group {
         name: String,
@@ -27,6 +28,7 @@ impl NewItem {
                 name,
                 path,
                 directory,
+                options,
             } => {
                 let mut el = Element::new("file");
                 el.container = true;
@@ -35,6 +37,7 @@ impl NewItem {
                 if let Some(d) = directory.filter(|d| !d.trim().is_empty()) {
                     el.children.push(Element::leaf("directory", &d));
                 }
+                config::set_entry_options(&mut el, &options);
                 el
             }
             NewItem::Group { name } => {
@@ -120,14 +123,15 @@ fn set_name(el: &mut Element, name: &str) {
     }
 }
 
-/// Modifie le nom, le chemin et le dossier de travail d'un raccourci.
-/// Les compteurs et les balises inconnues sont conservés.
+/// Modifie le nom, le chemin, le dossier de travail et les options d'un
+/// raccourci. Les compteurs et les balises inconnues sont conservés.
 pub fn update_entry(
     cfg: &mut Config,
     path: &[usize],
     name: &str,
     target: &str,
     directory: Option<&str>,
+    options: &EntryOptions,
 ) -> Result<(), String> {
     let el = node_mut(files_mut(cfg), path).ok_or("raccourci introuvable")?;
     if el.name != "file" {
@@ -157,7 +161,81 @@ pub fn update_entry(
         }
         (None, None) => {}
     }
+    config::set_entry_options(el, options);
     Ok(())
+}
+
+/// Épingle ou désépingle un raccourci.
+pub fn set_favorite(cfg: &mut Config, path: &[usize], on: bool) -> Result<(), String> {
+    let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
+    let mut o = EntryOptions::of(el);
+    o.favorite = on;
+    config::set_entry_options(el, &o);
+    Ok(())
+}
+
+/// Remplace la lettre de lecteur `old` par `new` dans les chemins absolus
+/// (`<path>` et `<directory>`). Renvoie le nombre de balises modifiées.
+pub fn retarget_drive(cfg: &mut Config, old: char, new: char) -> usize {
+    let mut n = 0;
+    visit_entries(files_mut(cfg), &mut |el| {
+        for c in el.children.iter_mut() {
+            if c.name == "path" || c.name == "directory" {
+                if let Some(t) = crate::paths::replace_drive(&c.text, old, new) {
+                    c.text = t;
+                    n += 1;
+                }
+            }
+        }
+    });
+    n
+}
+
+/// Nombre de chemins absolus qui désignent le lecteur `letter`.
+pub fn count_drive_refs(cfg: &Config, letter: char) -> usize {
+    let mut n = 0;
+    if let Some(files) = cfg.files() {
+        count_refs(files, letter, &mut n);
+    }
+    n
+}
+
+fn count_refs(el: &Element, letter: char, n: &mut usize) {
+    for c in &el.children {
+        match c.name.as_str() {
+            "files" | "file" => count_refs(c, letter, n),
+            "path" | "directory"
+                if crate::paths::replace_drive(&c.text, letter, letter).is_some() =>
+            {
+                *n += 1;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn visit_entries(el: &mut Element, f: &mut impl FnMut(&mut Element)) {
+    for c in el.children.iter_mut() {
+        match c.name.as_str() {
+            "files" => visit_entries(c, f),
+            "file" => f(c),
+            _ => {}
+        }
+    }
+}
+
+/// Raccourcis dont la cible est introuvable, à supprimer : chemins triés de
+/// façon à pouvoir les retirer un par un sans décaler les suivants.
+pub fn delete_many(cfg: &mut Config, mut paths: Vec<ItemPath>) -> Result<usize, String> {
+    // Ordre inverse : les indices restants restent valides.
+    paths.sort();
+    paths.dedup();
+    let mut n = 0;
+    for p in paths.iter().rev() {
+        delete(cfg, p)?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 /// Supprime un raccourci ou un groupe (avec son contenu).
@@ -252,6 +330,7 @@ mod tests {
                 name: "Nouveau".into(),
                 path: "Outils\\n.exe".into(),
                 directory: Some(String::new()),
+                options: EntryOptions::default(),
             },
         )
         .unwrap();
@@ -293,14 +372,106 @@ mod tests {
             "VLC",
             "Video\\VLC3\\vlc.exe",
             Some("Video\\VLC3"),
+            &EntryOptions::default(),
         )
         .unwrap();
         let el = c.item(&[0, 0]).unwrap();
         let order: Vec<&str> = el.children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(order, ["path", "directory", "runcount", "rundate"]);
         assert_eq!(el.child_text("runcount"), Some("62"));
-        update_entry(&mut c, &[0, 0], "VLC", "Video\\VLC3\\vlc.exe", None).unwrap();
+        update_entry(
+            &mut c,
+            &[0, 0],
+            "VLC",
+            "Video\\VLC3\\vlc.exe",
+            None,
+            &EntryOptions::default(),
+        )
+        .unwrap();
         assert!(c.item(&[0, 0]).unwrap().child("directory").is_none());
+    }
+
+    #[test]
+    fn entry_options_round_trip() {
+        let mut c = cfg();
+        let opts = EntryOptions {
+            parameters: "--fullscreen \"x y\"".into(),
+            description: "Lecteur vidéo".into(),
+            window: config::WindowState::Maximized,
+            autorun: true,
+            admin: true,
+            favorite: true,
+        };
+        update_entry(
+            &mut c,
+            &[0, 0],
+            "VLC",
+            "Video\\VLC\\vlc.exe",
+            Some("Video"),
+            &opts,
+        )
+        .unwrap();
+        let el = c.item(&[0, 0]).unwrap();
+        let order: Vec<&str> = el.children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            order,
+            [
+                "path",
+                "parameters",
+                "directory",
+                "description",
+                "windowstate",
+                "autorun",
+                "runasadmin",
+                "favorite",
+                "runcount",
+                "rundate"
+            ]
+        );
+        assert_eq!(el.child_text("windowstate"), Some("wsMaximized"));
+        assert_eq!(EntryOptions::of(el), opts);
+        // Relecture après écriture.
+        let back = Config::from_str(&c.to_xml(), "E:\\Portable").unwrap();
+        assert_eq!(EntryOptions::of(back.item(&[0, 0]).unwrap()), opts);
+        assert!(back.flatten()[0].favorite);
+        // Les valeurs par défaut retirent les balises.
+        set_favorite(&mut c, &[0, 0], false).unwrap();
+        update_entry(
+            &mut c,
+            &[0, 0],
+            "VLC",
+            "x.exe",
+            None,
+            &EntryOptions::default(),
+        )
+        .unwrap();
+        let el = c.item(&[0, 0]).unwrap();
+        let order: Vec<&str> = el.children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(order, ["path", "runcount", "rundate"]);
+    }
+
+    #[test]
+    fn drive_letters() {
+        let mut c = cfg();
+        // Fixture : PowerISO sous C:\ (chemin et dossier).
+        assert_eq!(count_drive_refs(&c, 'C'), 2);
+        assert_eq!(count_drive_refs(&c, 'F'), 0);
+        assert_eq!(retarget_drive(&mut c, 'c', 'D'), 2);
+        let el = c.item(&[2, 0]).unwrap();
+        assert_eq!(
+            el.child_text("path"),
+            Some("D:\\Program Files (x86)\\PowerISO\\PowerISO.exe")
+        );
+        assert_eq!(count_drive_refs(&c, 'C'), 0);
+    }
+
+    #[test]
+    fn delete_several() {
+        let mut c = cfg();
+        let n = delete_many(&mut c, vec![vec![0, 0], vec![0, 2], vec![4]]).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(names(&c, &[0]), ["MPC-HC 64"]);
+        assert_eq!(names(&c, &[]).len(), 4);
     }
 
     #[test]

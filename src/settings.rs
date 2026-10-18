@@ -5,6 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::alarms::ReminderStyle;
 use crate::hotcorner::Corner;
 use crate::i18n::{tr, Language};
 use crate::icons::{self, IconColor, IconImage, IconShape};
@@ -70,6 +71,15 @@ pub struct Settings {
     pub icon_color: IconColor,
     /// Icône personnalisée (.ico, .exe…), relative au dossier du fichier.
     pub icon_file: Option<String>,
+    /// Le coin actif fonctionne sur chaque écran (sinon l'écran principal).
+    pub hot_corner_all_screens: bool,
+    pub reminders: ReminderStyle,
+    /// Fenêtre réduite à la recherche et à la liste.
+    pub compact: bool,
+    /// Vérifier les mises à jour au démarrage.
+    pub check_updates: bool,
+    /// Lettre du lecteur au dernier lancement (détection des changements).
+    pub last_drive: Option<char>,
 }
 
 impl Default for Settings {
@@ -88,6 +98,11 @@ impl Default for Settings {
             icon_shape: IconShape::Play,
             icon_color: IconColor::Blue,
             icon_file: None,
+            hot_corner_all_screens: true,
+            reminders: ReminderStyle::Toast,
+            compact: false,
+            check_updates: true,
+            last_drive: None,
         }
     }
 }
@@ -118,6 +133,18 @@ impl Settings {
              # Délai de présence dans la zone (millisecondes) et taille des coins (pixels).\r\n\
              hot_corner_delay={}\r\n\
              hot_corner_size={}\r\n\
+             # Coin actif sur tous les écrans (sinon l'écran principal uniquement).\r\n\
+             hot_corner_all_screens={}\r\n\
+             \r\n\
+             # Rappels des notes : {}.\r\n\
+             reminders={}\r\n\
+             \r\n\
+             # Mode compact (recherche et liste seulement) ; vérification des mises à jour.\r\n\
+             compact={}\r\n\
+             check_updates={}\r\n\
+             \r\n\
+             # Lettre du lecteur au dernier lancement (géré automatiquement).\r\n\
+             last_drive={}\r\n\
              \r\n\
              # Langue de l'interface : {}.\r\n\
              language={}\r\n\
@@ -140,6 +167,12 @@ impl Settings {
             self.hot_corner.key(),
             self.hot_corner_delay,
             self.hot_corner_size,
+            self.hot_corner_all_screens,
+            join(ReminderStyle::ALL.iter().map(|l| l.key()).collect()),
+            self.reminders.key(),
+            self.compact,
+            self.check_updates,
+            self.last_drive.map(String::from).unwrap_or_default(),
             join(Language::ALL.iter().map(|l| l.key()).collect()),
             self.language.key(),
             join(Theme::ALL.iter().map(|l| l.key()).collect()),
@@ -197,7 +230,7 @@ pub fn load(path: &Path) -> Settings {
     match fs::read_to_string(path) {
         Ok(text) => {
             let s = parse(&text);
-            if !text.contains("icon_shape=") {
+            if !text.contains("check_updates=") {
                 let _ = s.save(path);
             }
             s
@@ -249,6 +282,19 @@ pub fn parse(text: &str) -> Settings {
             "icon_shape" => s.icon_shape = IconShape::from_key(value),
             "icon_color" => s.icon_color = IconColor::from_key(value),
             "icon_file" => s.icon_file = (!value.is_empty()).then(|| value.to_string()),
+            "hot_corner_all_screens" => {
+                s.hot_corner_all_screens = boolean(value, s.hot_corner_all_screens)
+            }
+            "reminders" => s.reminders = ReminderStyle::from_key(value),
+            "compact" => s.compact = boolean(value, s.compact),
+            "check_updates" => s.check_updates = boolean(value, s.check_updates),
+            "last_drive" => {
+                s.last_drive = value
+                    .chars()
+                    .next()
+                    .filter(char::is_ascii_alphabetic)
+                    .map(|c| c.to_ascii_uppercase())
+            }
             _ => {}
         }
     }
@@ -300,6 +346,11 @@ mod tests {
             icon_shape: IconShape::Bolt,
             icon_color: IconColor::Purple,
             icon_file: Some("_Icones\\pstart.ico".into()),
+            hot_corner_all_screens: false,
+            reminders: ReminderStyle::Both,
+            compact: true,
+            check_updates: false,
+            last_drive: Some('F'),
             ..Default::default()
         };
         assert_eq!(parse(&s.to_ini()), s);

@@ -4,7 +4,7 @@
 /// jusqu'à la fin du processus.
 #[cfg(windows)]
 pub fn acquire() -> bool {
-    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
 
     let name: Vec<u16> = "Local\\PStartRsSingleInstance"
@@ -17,7 +17,16 @@ pub fn acquire() -> bool {
     unsafe {
         let handle = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
         // En cas d'échec de création, on ne bloque pas le démarrage.
-        handle.is_null() || GetLastError() != ERROR_ALREADY_EXISTS
+        if handle.is_null() {
+            return true;
+        }
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            // Ne pas garder le verrou de l'autre instance en vie (nouvel
+            // essai après une mise à jour).
+            CloseHandle(handle);
+            return false;
+        }
+        true
     }
 }
 

@@ -4,9 +4,33 @@
 //! démarrent, les dossiers s'ouvrent dans l'Explorateur et les documents
 //! (`.txt`, `.chm`, `.jar`, `.cmd`…) dans leur application associée.
 
+use crate::config::WindowState;
+
+/// Comment lancer un raccourci.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Launch<'a> {
+    pub params: Option<&'a str>,
+    pub workdir: Option<&'a str>,
+    pub window: WindowState,
+    /// Verbe `runas` : demande d'élévation (UAC).
+    pub admin: bool,
+}
+
 /// Lance `target` avec `workdir` comme dossier de travail.
 pub fn launch(target: &str, workdir: Option<&str>) -> Result<(), String> {
-    imp::open(target, None, workdir)
+    launch_with(
+        target,
+        &Launch {
+            workdir,
+            ..Default::default()
+        },
+    )
+}
+
+/// Lance `target` avec paramètres, état de fenêtre et élévation éventuelle.
+pub fn launch_with(target: &str, how: &Launch) -> Result<(), String> {
+    let params = how.params.map(str::trim).filter(|p| !p.is_empty());
+    imp::run(target, params, how.workdir, how.window, how.admin)
 }
 
 /// Ouvre l'Explorateur sur le dossier contenant `target`, fichier sélectionné.
@@ -21,7 +45,11 @@ mod imp {
     use std::ptr;
 
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
+    };
+
+    use crate::config::WindowState;
 
     fn wide(s: &str) -> Vec<u16> {
         OsStr::new(s)
@@ -31,7 +59,22 @@ mod imp {
     }
 
     pub fn open(file: &str, params: Option<&str>, workdir: Option<&str>) -> Result<(), String> {
-        let verb = wide("open");
+        run(file, params, workdir, WindowState::Normal, false)
+    }
+
+    pub fn run(
+        file: &str,
+        params: Option<&str>,
+        workdir: Option<&str>,
+        window: WindowState,
+        admin: bool,
+    ) -> Result<(), String> {
+        let verb = wide(if admin { "runas" } else { "open" });
+        let show = match window {
+            WindowState::Normal => SW_SHOWNORMAL,
+            WindowState::Minimized => SW_SHOWMINNOACTIVE,
+            WindowState::Maximized => SW_SHOWMAXIMIZED,
+        };
         let file_w = wide(file);
         let params_w = params.map(wide);
         let dir_w = workdir.map(wide);
@@ -44,7 +87,7 @@ mod imp {
                 file_w.as_ptr(),
                 params_w.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
                 dir_w.as_ref().map_or(ptr::null(), |d| d.as_ptr()),
-                SW_SHOWNORMAL,
+                show,
             )
         };
         // ShellExecute renvoie une valeur > 32 en cas de succès.
@@ -66,7 +109,7 @@ mod imp {
             0 => crate::i18n::tr("mémoire insuffisante").into(),
             2 => crate::i18n::tr("fichier introuvable").into(),
             3 => crate::i18n::tr("chemin introuvable").into(),
-            5 => crate::i18n::tr("accès refusé").into(),
+            5 => crate::i18n::tr("accès refusé (ou élévation annulée)").into(),
             8 => crate::i18n::tr("mémoire insuffisante").into(),
             11 => crate::i18n::tr("exécutable invalide").into(),
             26 => crate::i18n::tr("violation de partage").into(),
@@ -82,7 +125,18 @@ mod imp {
 mod imp {
     use std::process::Command;
 
+    use crate::config::WindowState;
     use crate::paths::to_native;
+
+    pub fn run(
+        file: &str,
+        params: Option<&str>,
+        workdir: Option<&str>,
+        _window: WindowState,
+        _admin: bool,
+    ) -> Result<(), String> {
+        open(file, params, workdir)
+    }
 
     pub fn open(file: &str, params: Option<&str>, workdir: Option<&str>) -> Result<(), String> {
         let opener = if cfg!(target_os = "macos") {

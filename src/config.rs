@@ -34,6 +34,134 @@ pub struct FlatEntry {
     pub target: String,
     pub runcount: u32,
     pub rundate: Option<String>,
+    pub favorite: bool,
+    pub autorun: bool,
+}
+
+/// État de la fenêtre au lancement (`<windowstate>`, valeurs Delphi).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindowState {
+    #[default]
+    Normal,
+    Minimized,
+    Maximized,
+}
+
+impl WindowState {
+    pub const ALL: [WindowState; 3] = [
+        WindowState::Normal,
+        WindowState::Minimized,
+        WindowState::Maximized,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            WindowState::Normal => "wsNormal",
+            WindowState::Minimized => "wsMinimized",
+            WindowState::Maximized => "wsMaximized",
+        }
+    }
+
+    pub fn from_key(s: &str) -> WindowState {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "wsminimized" | "1" | "minimized" => WindowState::Minimized,
+            "wsmaximized" | "2" | "maximized" => WindowState::Maximized,
+            _ => WindowState::Normal,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WindowState::Normal => crate::i18n::tr("normale"),
+            WindowState::Minimized => crate::i18n::tr("réduite"),
+            WindowState::Maximized => crate::i18n::tr("agrandie"),
+        }
+    }
+}
+
+/// Options d'un raccourci. `parameters`, `description`, `windowstate` et
+/// `autorun` sont des balises de PStart ; `runasadmin` et `favorite` sont
+/// propres à PStart-rs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EntryOptions {
+    pub parameters: String,
+    pub description: String,
+    pub window: WindowState,
+    pub autorun: bool,
+    pub admin: bool,
+    pub favorite: bool,
+}
+
+impl EntryOptions {
+    pub fn of(el: &Element) -> EntryOptions {
+        let text = |n: &str| el.child_text(n).unwrap_or("").trim().to_string();
+        EntryOptions {
+            parameters: text("parameters"),
+            description: text("description"),
+            window: WindowState::from_key(&text("windowstate")),
+            autorun: is_true(&text("autorun")),
+            admin: is_true(&text("runasadmin")),
+            favorite: is_true(&text("favorite")),
+        }
+    }
+}
+
+fn is_true(s: &str) -> bool {
+    s.eq_ignore_ascii_case("true") || s == "1"
+}
+
+/// Ordre des balises d'un raccourci, pour insérer au bon endroit.
+pub const ENTRY_TAGS: [&str; 10] = [
+    "path",
+    "parameters",
+    "directory",
+    "description",
+    "windowstate",
+    "autorun",
+    "runasadmin",
+    "favorite",
+    "runcount",
+    "rundate",
+];
+
+/// Remplace, insère (à sa place dans [`ENTRY_TAGS`]) ou retire une balise.
+pub fn set_tag(el: &mut Element, name: &str, value: Option<&str>) {
+    let existing = el.children.iter().position(|c| c.name == name);
+    match (value, existing) {
+        (Some(v), Some(i)) => el.children[i].text = v.to_string(),
+        (Some(v), None) => {
+            let rank = ENTRY_TAGS.iter().position(|t| *t == name);
+            let pos = el
+                .children
+                .iter()
+                .position(|c| {
+                    let r = ENTRY_TAGS.iter().position(|t| *t == c.name);
+                    matches!((rank, r), (Some(a), Some(b)) if b > a)
+                })
+                .unwrap_or(el.children.len());
+            el.children.insert(pos, Element::leaf(name, v));
+        }
+        (None, Some(i)) => {
+            el.children.remove(i);
+        }
+        (None, None) => {}
+    }
+}
+
+/// Écrit les options d'un raccourci (les valeurs par défaut retirent la balise).
+pub fn set_entry_options(el: &mut Element, o: &EntryOptions) {
+    let opt = |s: &str| {
+        let s = s.trim();
+        (!s.is_empty()).then(|| s.to_string())
+    };
+    let flag = |b: bool| b.then(|| "True".to_string());
+    set_tag(el, "parameters", opt(&o.parameters).as_deref());
+    set_tag(el, "description", opt(&o.description).as_deref());
+    let ws = (o.window != WindowState::Normal).then(|| o.window.key().to_string());
+    set_tag(el, "windowstate", ws.as_deref());
+    set_tag(el, "autorun", flag(o.autorun).as_deref());
+    set_tag(el, "runasadmin", flag(o.admin).as_deref());
+    set_tag(el, "favorite", flag(o.favorite).as_deref());
 }
 
 impl Config {
@@ -160,6 +288,8 @@ impl Config {
                     target: self.resolve(child),
                     runcount: runcount(child),
                     rundate: child.child_text("rundate").map(str::to_string),
+                    favorite: is_true(child.child_text("favorite").unwrap_or("").trim()),
+                    autorun: is_true(child.child_text("autorun").unwrap_or("").trim()),
                 }),
                 _ => {}
             }

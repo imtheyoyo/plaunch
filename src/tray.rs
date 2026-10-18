@@ -146,6 +146,20 @@ fn build_menu(shared: &Shared) -> Menu {
     if let Some(cfg) = guard.as_ref() {
         if let Some(files) = cfg.files() {
             let icons = shared.icons.lock().unwrap();
+            // Favoris en tête de menu.
+            let favorites: Vec<_> = cfg.flatten().into_iter().filter(|e| e.favorite).collect();
+            for e in &favorites {
+                let _ = menu.append(&IconMenuItem::with_id(
+                    entry_id(&e.path),
+                    menu_label(&format!("★ {}", e.name)),
+                    true,
+                    menu_icon(&icons, &e.target),
+                    None,
+                ));
+            }
+            if !favorites.is_empty() {
+                let _ = menu.append(&PredefinedMenuItem::separator());
+            }
             let mut path = Vec::new();
             let items = build_items(cfg, files, &mut path, &icons);
             for item in &items {
@@ -216,15 +230,11 @@ fn build_items(
             }
             "file" => {
                 let target = cfg.resolve(child);
-                let icon = icons.get(&target).and_then(|img| {
-                    let small = img.downscale(16);
-                    MenuIcon::from_rgba(small.rgba, small.width, small.height).ok()
-                });
                 out.push(Box::new(IconMenuItem::with_id(
                     entry_id(path),
                     menu_label(config::display_name(child)),
                     true,
-                    icon,
+                    menu_icon(icons, &target),
                     None,
                 )));
             }
@@ -233,6 +243,16 @@ fn build_items(
         path.pop();
     }
     out
+}
+
+fn menu_icon(
+    icons: &std::collections::HashMap<String, icons::IconImage>,
+    target: &str,
+) -> Option<MenuIcon> {
+    icons.get(target).and_then(|img| {
+        let small = img.downscale(16);
+        MenuIcon::from_rgba(small.rgba, small.width, small.height).ok()
+    })
 }
 
 /// Sous Windows, `&` introduit un raccourci clavier dans les menus.

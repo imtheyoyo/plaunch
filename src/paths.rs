@@ -167,6 +167,26 @@ pub fn make_relative(target: &str, base: &str) -> String {
 }
 
 /// Convertit un chemin Windows en chemin natif de la plateforme courante.
+/// Lettre de lecteur d'un chemin absolu (`E:\…` → `E`).
+pub fn drive_letter(p: &str) -> Option<char> {
+    let mut chars = p.chars();
+    let letter = chars.next()?;
+    (letter.is_ascii_alphabetic() && chars.next() == Some(':')).then(|| letter.to_ascii_uppercase())
+}
+
+/// Remplace la lettre de lecteur `old` par `new` si `p` est un chemin absolu
+/// sur `old` (`F:\…`, `F:/…` ou `F:`). `None` sinon.
+pub fn replace_drive(p: &str, old: char, new: char) -> Option<String> {
+    if drive_letter(p)? != old.to_ascii_uppercase() {
+        return None;
+    }
+    let rest = &p[2..];
+    if !(rest.is_empty() || rest.starts_with('\\') || rest.starts_with('/')) {
+        return None; // « F:relatif » : rare, laissé tel quel
+    }
+    Some(format!("{}:{rest}", new.to_ascii_uppercase()))
+}
+
 pub fn to_native(p: &str) -> std::path::PathBuf {
     if cfg!(windows) {
         std::path::PathBuf::from(p)
@@ -178,6 +198,20 @@ pub fn to_native(p: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drives() {
+        assert_eq!(drive_letter("e:\\x"), Some('E'));
+        assert_eq!(drive_letter("\\\\NAS\\x"), None);
+        assert_eq!(drive_letter("_HD\\x"), None);
+        assert_eq!(
+            replace_drive("F:\\Apps\\a.exe", 'f', 'g').as_deref(),
+            Some("G:\\Apps\\a.exe")
+        );
+        assert_eq!(replace_drive("F:", 'F', 'E').as_deref(), Some("E:"));
+        assert_eq!(replace_drive("F:rel", 'F', 'E'), None);
+        assert_eq!(replace_drive("C:\\x", 'F', 'E'), None);
+    }
 
     const BASE: &str = "F:\\_Appli Portables";
 

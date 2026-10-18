@@ -106,14 +106,14 @@ pub fn spawn(shared: Arc<Shared>) {
             if shared.quitting.load(Ordering::SeqCst) {
                 return;
             }
-            let (corner, delay, size) = *shared.hot_corner.lock().unwrap();
+            let (corner, delay, size, all_screens) = *shared.hot_corner.lock().unwrap();
             if corner == Corner::None {
                 entered = None;
                 fired = false;
                 std::thread::sleep(Duration::from_millis(450));
                 continue;
             }
-            let Some((x, y, w, h)) = imp::cursor_and_screen() else {
+            let Some((x, y, w, h)) = imp::cursor_and_screen(all_screens) else {
                 continue;
             };
             if corner.contains(x, y, w, h, size) {
@@ -134,18 +134,41 @@ pub fn spawn(shared: Arc<Shared>) {
 
 #[cfg(windows)]
 mod imp {
+    use std::mem::size_of;
+
     use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetCursorPos, GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
     };
 
-    pub fn cursor_and_screen() -> Option<(i32, i32, i32, i32)> {
+    /// Position du curseur relative à l'écran concerné, et taille de cet
+    /// écran : celui sous le curseur (`all_screens`) ou l'écran principal.
+    pub fn cursor_and_screen(all_screens: bool) -> Option<(i32, i32, i32, i32)> {
         let mut p = POINT { x: 0, y: 0 };
-        // SAFETY : lecture de la position du curseur et des dimensions de
-        // l'écran principal.
+        // SAFETY : lecture de la position du curseur et des dimensions des
+        // écrans ; structure MONITORINFO initialisée avec sa taille.
         unsafe {
             if GetCursorPos(&mut p) == 0 {
                 return None;
+            }
+            if all_screens {
+                let mon = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
+                let mut info = MONITORINFO {
+                    cbSize: size_of::<MONITORINFO>() as u32,
+                    ..Default::default()
+                };
+                if !mon.is_null() && GetMonitorInfoW(mon, &mut info) != 0 {
+                    let r = info.rcMonitor;
+                    return Some((
+                        p.x - r.left,
+                        p.y - r.top,
+                        r.right - r.left,
+                        r.bottom - r.top,
+                    ));
+                }
             }
             Some((
                 p.x,
@@ -159,7 +182,7 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
-    pub fn cursor_and_screen() -> Option<(i32, i32, i32, i32)> {
+    pub fn cursor_and_screen(_all_screens: bool) -> Option<(i32, i32, i32, i32)> {
         None
     }
 }

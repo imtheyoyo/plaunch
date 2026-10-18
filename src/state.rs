@@ -29,8 +29,12 @@ pub struct Shared {
     pub structure_version: AtomicU64,
     /// Raccourcis du menu Démarrer (pour la recherche).
     pub start_menu: Mutex<Vec<StartItem>>,
-    /// Coin actif : zone, délai (ms), taille (px).
-    pub hot_corner: Mutex<(Corner, u64, i32)>,
+    /// Coin actif : zone, délai (ms), taille (px), sur tous les écrans.
+    pub hot_corner: Mutex<(Corner, u64, i32, bool)>,
+    /// Forme des rappels.
+    pub reminders: Mutex<crate::alarms::ReminderStyle>,
+    /// Mise à jour intégrée.
+    pub update: Mutex<crate::update::State>,
     /// Notes et alarmes.
     pub notes: Mutex<Option<Notes>>,
     /// Afficher la vue Notes au prochain affichage (menu de l'icône).
@@ -67,7 +71,14 @@ impl Shared {
             let name = config::display_name(el).to_string();
             let target = cfg.resolve(el);
             let workdir = cfg.working_dir(el);
-            match launcher::launch(&target, workdir.as_deref()) {
+            let opts = config::EntryOptions::of(el);
+            let how = launcher::Launch {
+                params: Some(&opts.parameters),
+                workdir: workdir.as_deref(),
+                window: opts.window,
+                admin: opts.admin,
+            };
+            match launcher::launch_with(&target, &how) {
                 Ok(()) => {
                     let now = chrono::Local::now().format(config::DATE_FORMAT).to_string();
                     if let Some(el) = cfg.item_mut(path) {
