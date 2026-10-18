@@ -64,6 +64,41 @@ vous gardez votre arborescence de raccourcis telle quelle.
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.7
+
+- **Mises à jour vérifiées** : chaque version publie `pstart-rs.exe.sha256` ;
+  la mise à jour intégrée refuse un fichier dont l'empreinte ne correspond pas.
+- **Journal** `pstart-rs.log` à côté de l'exécutable (erreurs, lancements
+  échoués, mises à jour, plantages avec pile d'appels). Bouton « Ouvrir le
+  journal » dans les réglages.
+- **Annuler / rétablir** (`Ctrl+Z` / `Ctrl+Y`, boutons ↶ ↷) pour toute
+  modification : ajout, suppression, déplacement, nettoyage, import…
+- **Rechargement automatique** de `PStart.xml` s'il est modifié par un autre
+  programme (synchronisation, autre PC, PStart).
+- **Exécutable allégé** (TLS de Windows, optimisation pour la taille) avec son
+  **icône intégrée**, visible dans l'Explorateur.
+- **Recherche intelligente** : fautes de frappe (« notpad »), lettres
+  inversées, initiales (« vmp » → VLC media player), accents ignorés ; les
+  programmes les plus lancés remontent.
+- **Variables de chemin** : `%PSTART%` (dossier de PStart.xml) et `%DRIVE%`
+  (son lecteur), en plus des variables Windows ; bouton « Rendre les chemins
+  portables » qui convertit en relatif les chemins absolus de la clé.
+- **Lancer tout un groupe** (clic droit ou panneau de détails).
+- **Raccourci clavier par programme** (ex. `Ctrl+Alt+V`), actif même fenêtre
+  masquée.
+- **Éjection de la clé** (menu de l'icône ou réglages) : liste des programmes
+  ouverts depuis la clé, fermeture propre (ou forcée), puis éjection.
+- **Détection de nouveaux programmes** dans un dossier (format
+  PortableApps.com reconnu, avec nom et catégorie), signalée au démarrage si
+  souhaité.
+- **Import** d'un dossier de raccourcis `.lnk` / `.url` (un groupe par
+  sous-dossier).
+- **Séparateurs**, **liens web** (`https://…`) et **icônes de groupe**.
+
+Les balises et attributs propres à PStart-rs (`runasadmin`, `favorite`,
+`globalhotkey`, `<separator>`, attribut `icon` des groupes) et les variables
+`%PSTART%` / `%DRIVE%` ne sont pas compris par l'ancien PStart.
+
 ### Nouveautés de la v0.6
 
 - **Options par raccourci** (formulaire de modification) : paramètres de la
@@ -119,6 +154,9 @@ reminders=toast           ; toast, dialog, both
 compact=false             ; mode compact
 check_updates=true        ; vérifier les mises à jour au démarrage
 last_drive=F              ; géré automatiquement (détection du changement de lettre)
+scan_folder=PortableApps  ; dossier où chercher de nouveaux programmes
+scan_on_start=false       ; les signaler au démarrage
+scan_ignored=             ; programmes à ne plus signaler (séparés par |)
 ```
 
 Depuis la fenêtre ⚙, tout s'applique immédiatement, sauf le raccourci global
@@ -180,6 +218,10 @@ cargo test -- --ignored
 | `autostart.rs` | Démarrage avec Windows (registre) |
 | `i18n.rs` | Traductions (le texte français sert de clé, anglais en table) |
 | `backup.rs` | Sauvegarde et restauration (zip) |
+| `log.rs` | Journal et plantages |
+| `fuzzy.rs` | Recherche tolérante |
+| `scan.rs` | Détection et import de programmes |
+| `eject.rs` | Éjection de la clé |
 | `update.rs` | Mise à jour depuis GitHub Releases |
 | `app.rs`, `app/stats.rs` | Interface egui, vue Statistiques |
 
@@ -194,6 +236,10 @@ cargo test -- --ignored
 - ~~**v0.6** : options des raccourcis (paramètres, administrateur…), favoris,
   lettre de lecteur, clavier et mode compact, notifications, multi-écran,
   sauvegarde, mise à jour intégrée, statistiques.~~ ✔
+- ~~**v0.7** : mises à jour vérifiées, journal, annuler/rétablir, rechargement
+  automatique, exécutable allégé, recherche floue, variables de chemin,
+  groupes de lancement, raccourcis par programme, éjection, détection et
+  import de programmes, séparateurs, liens web et icônes de groupe.~~ ✔
 
 ## Licence
 
