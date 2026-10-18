@@ -61,7 +61,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        window::TITLE,
+        "PStart-rs",
         options,
         Box::new(move |cc| Ok(Box::new(app::PStartApp::new(cc, file)))),
     )

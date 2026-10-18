@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 /// Handle natif de la fenêtre principale (0 tant qu'il est inconnu).
 static HWND: AtomicIsize = AtomicIsize::new(0);
 
-pub const TITLE: &str = "PStart-rs";
+// Titre distinctif : sert aussi à retrouver la fenêtre (instance unique),
+// il ne doit pas pouvoir correspondre à un dossier ouvert dans l'Explorateur.
+pub const TITLE: &str = "PStart-rs · Lanceur portable";
 
 pub fn set_handle(hwnd: isize) {
     HWND.store(hwnd, Ordering::SeqCst);
