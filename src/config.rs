@@ -222,6 +222,47 @@ pub struct SearchOptions {
     pub color_all_users: Option<[u8; 3]>,
 }
 
+/// RVB → couleur Delphi `BBGGRRh`.
+pub fn format_color([r, g, b]: [u8; 3]) -> String {
+    format!("{b:02X}{g:02X}{r:02X}h")
+}
+
+/// Palette de couleurs de PStart (`<colors>`), dans l'ordre du fichier.
+impl Config {
+    pub fn palette(&self) -> Vec<[u8; 3]> {
+        let mut out: Vec<[u8; 3]> = self
+            .root
+            .child("colors")
+            .map(|c| {
+                c.children
+                    .iter()
+                    .filter_map(|e| e.child_text("value").and_then(parse_color))
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Complète avec les couleurs par défaut de PStart.
+        for c in ["A0FFFFh", "A0FFA0h", "FFA0A0h", "A0C0FFh", "A0A0FFh"] {
+            if out.len() >= 5 {
+                break;
+            }
+            if let Some(c) = parse_color(c) {
+                if !out.contains(&c) {
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+
+    /// Couleur par défaut des notes (`<note><defaultcolor>`).
+    pub fn default_note_color(&self) -> [u8; 3] {
+        self.root
+            .get(&["note", "defaultcolor"])
+            .and_then(|e| parse_color(&e.text))
+            .unwrap_or([0xFF, 0xFF, 0xA0])
+    }
+}
+
 /// Couleur Delphi `BBGGRRh` (ex. `0080FFh`) → RVB.
 pub fn parse_color(text: &str) -> Option<[u8; 3]> {
     let hex = text.trim().trim_end_matches(['h', 'H']);
@@ -389,12 +430,21 @@ mod tests {
         assert_eq!(cfg.window_size(), Some([451.0, 823.0]));
     }
 
+    fn cfg_palette_len() -> usize {
+        Config::from_str(SAMPLE, "E:\\Portable")
+            .unwrap()
+            .palette()
+            .len()
+    }
+
     #[test]
     fn colors_are_bgr() {
         // 0080FFh en Delphi = rouge FF, vert 80, bleu 00 (orange).
         assert_eq!(parse_color("0080FFh"), Some([0xFF, 0x80, 0x00]));
         assert_eq!(parse_color("40A000h"), Some([0x00, 0xA0, 0x40]));
         assert_eq!(parse_color("xyz"), None);
+        assert_eq!(format_color([0xFF, 0x80, 0x00]), "0080FFh");
+        assert_eq!(cfg_palette_len(), 5);
         let cfg = Config::from_str(SAMPLE, "E:\\Portable").unwrap();
         let s = cfg.search_options();
         assert!(s.pstart && s.current_user && s.all_users);

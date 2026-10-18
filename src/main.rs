@@ -1,13 +1,17 @@
 // Pas de console en version release sous Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod alarms;
 mod app;
+mod autostart;
 mod config;
 mod edit;
+mod hotcorner;
 mod hotkey;
 mod icons;
 mod instance;
 mod launcher;
+mod notes;
 mod paths;
 mod settings;
 mod startmenu;

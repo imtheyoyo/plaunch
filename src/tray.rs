@@ -4,11 +4,12 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tray_icon::menu::{
-    Icon as MenuIcon, IconMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem,
-    Submenu,
+    CheckMenuItem, Icon as MenuIcon, IconMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem,
+    PredefinedMenuItem, Submenu,
 };
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
+use crate::autostart;
 use crate::config;
 use crate::icons;
 use crate::state::Shared;
@@ -17,6 +18,8 @@ use crate::xml::Element;
 
 const ID_SHOW: &str = "show";
 const ID_QUIT: &str = "quit";
+const ID_NOTES: &str = "notes";
+const ID_AUTOSTART: &str = "autostart";
 const ENTRY_PREFIX: &str = "e:";
 
 pub struct Tray {
@@ -88,6 +91,12 @@ fn install_handlers(shared: Arc<Shared>) {
                 shared.repaint();
             }
             ID_QUIT => quit(&shared),
+            ID_NOTES => {
+                shared.show_notes.store(true, Ordering::SeqCst);
+                window::show();
+                shared.repaint();
+            }
+            ID_AUTOSTART => toggle_autostart(&shared),
             _ => {
                 if let Some(path) = parse_entry_id(id) {
                     shared.launch(&path);
@@ -137,8 +146,34 @@ fn build_menu(shared: &Shared) -> Menu {
     }
     drop(guard);
 
+    let _ = menu.append(&MenuItem::with_id(ID_NOTES, "Notes…", true, None));
+    let _ = menu.append(&CheckMenuItem::with_id(
+        ID_AUTOSTART,
+        "Démarrer avec Windows",
+        true,
+        autostart::is_enabled(),
+        None,
+    ));
+    let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id(ID_QUIT, "Quitter PStart-rs", true, None));
     menu
+}
+
+fn toggle_autostart(shared: &Shared) {
+    let enable = !autostart::is_enabled();
+    let file = shared
+        .config
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.file.clone());
+    match autostart::set(enable, file.as_deref()) {
+        Ok(()) if enable => shared.set_status("Démarrage avec Windows activé"),
+        Ok(()) => shared.set_status("Démarrage avec Windows désactivé"),
+        Err(e) => shared.set_status(format!("Démarrage avec Windows : {e}")),
+    }
+    // Reconstruit le menu pour refléter l'état réel.
+    shared.structure_version.fetch_add(1, Ordering::SeqCst);
 }
 
 fn build_items(

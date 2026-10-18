@@ -8,8 +8,10 @@ use std::sync::{Mutex, OnceLock};
 use eframe::egui;
 
 use crate::config::{self, Config};
+use crate::hotcorner::Corner;
 use crate::icons::IconImage;
 use crate::launcher;
+use crate::notes::Notes;
 use crate::startmenu::StartItem;
 
 #[derive(Default)]
@@ -26,6 +28,12 @@ pub struct Shared {
     pub structure_version: AtomicU64,
     /// Raccourcis du menu Démarrer (pour la recherche).
     pub start_menu: Mutex<Vec<StartItem>>,
+    /// Coin actif : zone, délai (ms), taille (px).
+    pub hot_corner: Mutex<(Corner, u64, i32)>,
+    /// Notes et alarmes.
+    pub notes: Mutex<Option<Notes>>,
+    /// Afficher la vue Notes au prochain affichage (menu de l'icône).
+    pub show_notes: AtomicBool,
     /// Fermeture définitive demandée (menu « Quitter »).
     pub quitting: AtomicBool,
     /// Donner le focus à la recherche au prochain affichage.

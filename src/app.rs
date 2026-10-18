@@ -5,16 +5,19 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 
 use crate::config::{self, Config, ItemPath, SearchOptions};
 use crate::edit::{self, NewItem};
+use crate::hotcorner::Corner;
+use crate::notes::{Note, Notes, Repeat};
 use crate::settings::{self, Settings};
 use crate::startmenu::{self, Source, StartItem};
 use crate::state::Shared;
 use crate::xml::Element;
-use crate::{hotkey, icons, launcher, paths, tray, window};
+use crate::{alarms, autostart, hotcorner, hotkey, icons, launcher, notes, paths, tray, window};
 
 const ICON_SIZE: f32 = 18.0;
 const MAX_HITS: usize = 60;
@@ -24,6 +27,7 @@ enum View {
     Tree,
     MostUsed,
     Recent,
+    Notes,
 }
 
 /// Charge utile d'un glisser-déposer interne.
@@ -69,6 +73,9 @@ enum Action {
     Browse(Browse),
     SubmitForm,
     CloseDialog,
+    OpenSettings,
+    SaveSettings,
+    NotesChanged,
 }
 
 enum FormKind {
@@ -111,8 +118,14 @@ impl EditForm {
     }
 }
 
+struct SettingsForm {
+    settings: Settings,
+    autostart: bool,
+}
+
 enum Dialog {
     Form(EditForm),
+    Settings(SettingsForm),
     ConfirmDelete {
         path: ItemPath,
         name: String,
@@ -142,6 +155,10 @@ pub struct PStartApp {
     tray: Option<tray::Tray>,
     hotkey_info: Option<String>,
     _hotkey: Option<global_hotkey::GlobalHotKeyManager>,
+    settings_path: Option<PathBuf>,
+    /// Notes modifiées, à enregistrer après un court délai.
+    notes_dirty: Option<Instant>,
+    search_id: Option<egui::Id>,
 }
 
 impl PStartApp {
@@ -150,10 +167,16 @@ impl PStartApp {
         let _ = shared.ctx.set(cc.egui_ctx.clone());
         window::capture(cc);
 
-        let settings = file
+        let settings_path = file.as_deref().map(settings::path_for);
+        let settings = settings_path
             .as_deref()
-            .map(|f| settings::load(&settings::path_for(f)))
+            .map(settings::load)
             .unwrap_or_default();
+        *shared.hot_corner.lock().unwrap() = (
+            settings.hot_corner,
+            settings.hot_corner_delay,
+            settings.hot_corner_size,
+        );
 
         let (exists_tx, exists_rx) = mpsc::channel();
         let mut app = PStartApp {
@@ -173,12 +196,17 @@ impl PStartApp {
             tray: None,
             hotkey_info: None,
             _hotkey: None,
+            settings_path,
+            notes_dirty: None,
+            search_id: None,
         };
         if let Some(f) = file {
             app.open(&f);
         }
         app.scan_start_menu();
         app.init_desktop_integration();
+        alarms::spawn(app.shared.clone());
+        hotcorner::spawn(app.shared.clone());
         app
     }
 
@@ -232,6 +260,15 @@ impl PStartApp {
                 self.check_existence(targets.clone());
                 self.shared.icons.lock().unwrap().clear();
                 self.textures.clear();
+                self.flush_notes();
+                let notes = Notes::load(&notes::path_for(&cfg.file)).unwrap_or_else(|e| {
+                    self.shared.set_status(format!("Notes illisibles : {e}"));
+                    Notes {
+                        file: notes::path_for(&cfg.file),
+                        items: Vec::new(),
+                    }
+                });
+                *self.shared.notes.lock().unwrap() = Some(notes);
                 *self.shared.config.lock().unwrap() = Some(cfg);
                 // Les icônes du menu Démarrer sont recalculées avec le reste.
                 targets.extend(
@@ -249,6 +286,58 @@ impl PStartApp {
             }
             Err(e) => self.load_error = Some(e),
         }
+    }
+
+    /// Enregistre les notes si elles ont été modifiées.
+    fn flush_notes(&mut self) {
+        if self.notes_dirty.take().is_none() {
+            return;
+        }
+        let guard = self.shared.notes.lock().unwrap();
+        if let Some(notes) = guard.as_ref() {
+            if let Err(e) = notes.save() {
+                drop(guard);
+                self.shared.set_status(e);
+            }
+        }
+    }
+
+    fn save_settings(&mut self) {
+        let Some(Dialog::Settings(form)) = self.dialog.take() else {
+            return;
+        };
+        let new = form.settings;
+        let mut messages = Vec::new();
+        if let Some(path) = &self.settings_path {
+            if let Err(e) = new.save(path) {
+                messages.push(e);
+            }
+        }
+        *self.shared.hot_corner.lock().unwrap() =
+            (new.hot_corner, new.hot_corner_delay, new.hot_corner_size);
+        if form.autostart != autostart::is_enabled() {
+            let file = self
+                .shared
+                .config
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|c| c.file.clone());
+            if let Err(e) = autostart::set(form.autostart, file.as_deref()) {
+                messages.push(format!("Démarrage avec Windows : {e}"));
+            }
+            self.shared.structure_version.fetch_add(1, Ordering::SeqCst);
+        }
+        let restart = new.hotkey != self.settings.hotkey || new.tray != self.settings.tray;
+        self.settings = new;
+        if messages.is_empty() {
+            messages.push(if restart {
+                "Réglages enregistrés (raccourci et icône : au prochain démarrage)".into()
+            } else {
+                "Réglages enregistrés".into()
+            });
+        }
+        self.shared.set_status(messages.join(" ; "));
     }
 
     fn reload(&mut self) {
@@ -401,6 +490,14 @@ impl PStartApp {
             Action::Browse(kind) => self.browse(kind),
             Action::SubmitForm => self.submit_form(),
             Action::CloseDialog => self.dialog = None,
+            Action::OpenSettings => {
+                self.dialog = Some(Dialog::Settings(SettingsForm {
+                    settings: self.settings.clone(),
+                    autostart: autostart::is_enabled(),
+                }))
+            }
+            Action::SaveSettings => self.save_settings(),
+            Action::NotesChanged => self.notes_dirty = Some(Instant::now()),
         }
     }
 
@@ -624,6 +721,7 @@ impl PStartApp {
                 .hint_text("Rechercher… (Ctrl+F)")
                 .desired_width(f32::INFINITY);
             let resp = ui.add(search);
+            self.search_id = Some(resp.id);
             if self.focus_search {
                 resp.request_focus();
                 self.focus_search = false;
@@ -633,7 +731,11 @@ impl PStartApp {
             ui.selectable_value(&mut self.view, View::Tree, "Arborescence");
             ui.selectable_value(&mut self.view, View::MostUsed, "Plus utilisés");
             ui.selectable_value(&mut self.view, View::Recent, "Récents");
+            ui.selectable_value(&mut self.view, View::Notes, "Notes");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⚙").on_hover_text("Réglages").clicked() {
+                    actions.push(Action::OpenSettings);
+                }
                 if ui
                     .button("⟳")
                     .on_hover_text("Recharger le fichier")
@@ -705,9 +807,47 @@ impl PStartApp {
                             rows.flat(ui, e, false, &mut actions);
                         }
                     }
+                    View::Notes => self.notes_view(ui, cfg, &mut actions),
                 }
             });
         actions
+    }
+
+    fn notes_view(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
+        let palette = cfg.palette();
+        let mut guard = self.shared.notes.lock().unwrap();
+        let Some(notes) = guard.as_mut() else {
+            ui.weak("Notes indisponibles.");
+            return;
+        };
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            if ui.button("＋ Nouvelle note").clicked() {
+                notes.items.insert(0, Note::new(cfg.default_note_color()));
+                changed = true;
+            }
+            ui.weak(format!("Enregistrées dans {}", notes::FILE_NAME));
+        });
+        ui.add_space(6.0);
+        if notes.items.is_empty() {
+            ui.weak("Aucune note. Les alarmes s'affichent même fenêtre masquée.");
+        }
+        let mut delete = None;
+        for (i, note) in notes.items.iter_mut().enumerate() {
+            let (c, del) = note_card(ui, i, note, &palette);
+            changed |= c;
+            if del {
+                delete = Some(i);
+            }
+            ui.add_space(6.0);
+        }
+        if let Some(i) = delete {
+            notes.items.remove(i);
+            changed = true;
+        }
+        if changed {
+            actions.push(Action::NotesChanged);
+        }
     }
 
     fn search_results(
@@ -889,6 +1029,7 @@ impl PStartApp {
             ui.set_width(420.0);
             match dialog {
                 Dialog::Form(form) => form_ui(ui, form, &base, actions),
+                Dialog::Settings(form) => settings_ui(ui, form, actions),
                 Dialog::ConfirmDelete {
                     path,
                     name,
@@ -973,7 +1114,11 @@ impl PStartApp {
                 actions.push(Action::AskDelete(sel));
             }
         }
-        if enter {
+        // Entrée dans une note ou un autre champ ne doit rien lancer.
+        let search_focused = self
+            .search_id
+            .is_some_and(|id| ctx.memory(|m| m.has_focus(id)));
+        if enter && (!typing || search_focused) {
             self.enter_pressed(actions);
         }
     }
@@ -1017,6 +1162,7 @@ impl PStartApp {
         if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }
+        self.flush_notes();
         let quitting = self.shared.quitting.load(Ordering::SeqCst);
         if !quitting && self.settings.close_to_tray && self.tray.is_some() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1032,6 +1178,17 @@ impl eframe::App for PStartApp {
         self.sync_textures(&ctx);
         if let Some(t) = &mut self.tray {
             t.refresh(&self.shared);
+        }
+        if self.shared.show_notes.swap(false, Ordering::SeqCst) {
+            self.view = View::Notes;
+            self.search.clear();
+        }
+        if let Some(t) = self.notes_dirty {
+            if t.elapsed() >= Duration::from_millis(800) {
+                self.flush_notes();
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(900));
+            }
         }
         if self.shared.focus_search.swap(false, Ordering::SeqCst) {
             self.focus_search = true;
@@ -1156,6 +1313,197 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
     if submit {
         actions.push(Action::SubmitForm);
     }
+}
+
+/// Carte d'une note. Renvoie (modifiée, à supprimer).
+fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) -> (bool, bool) {
+    let [r, g, b] = note.color;
+    let fill = egui::Color32::from_rgb(r, g, b);
+    let ink = egui::Color32::from_gray(25);
+    let mut changed = false;
+    let mut delete = false;
+    egui::Frame::new()
+        .fill(fill)
+        .corner_radius(6.0)
+        .inner_margin(8.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let v = ui.visuals_mut();
+            v.override_text_color = Some(ink);
+            v.extreme_bg_color = lighten(fill);
+            v.widgets.inactive.weak_bg_fill = darken(fill);
+            v.widgets.inactive.bg_fill = darken(fill);
+            v.widgets.hovered.weak_bg_fill = darken(darken(fill));
+            v.widgets.inactive.fg_stroke.color = ink;
+            v.widgets.hovered.fg_stroke.color = ink;
+            v.widgets.active.fg_stroke.color = ink;
+            changed |= ui
+                .add(
+                    egui::TextEdit::singleline(&mut note.title)
+                        .hint_text("Titre")
+                        .font(egui::TextStyle::Heading)
+                        .desired_width(f32::INFINITY),
+                )
+                .changed();
+            changed |= ui
+                .add(
+                    egui::TextEdit::multiline(&mut note.text)
+                        .hint_text("Texte de la note")
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY),
+                )
+                .changed();
+            ui.horizontal_wrapped(|ui| {
+                for &c in palette {
+                    let color = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+                    ui.painter().rect_filled(rect, 3.0, color);
+                    let stroke_w = if c == note.color { 2.0 } else { 1.0 };
+                    ui.painter().rect_stroke(
+                        rect,
+                        3.0,
+                        egui::Stroke::new(stroke_w, ink),
+                        egui::StrokeKind::Inside,
+                    );
+                    if resp.on_hover_text("Couleur").clicked() && note.color != c {
+                        note.color = c;
+                        changed = true;
+                    }
+                }
+                ui.add_space(8.0);
+                ui.label("Alarme");
+                let valid = notes::parse_input(&note.alarm_input).is_some()
+                    || note.alarm_input.trim().is_empty();
+                let mut edit = egui::TextEdit::singleline(&mut note.alarm_input)
+                    .hint_text("AAAA/MM/JJ HH:MM")
+                    .desired_width(120.0);
+                if !valid {
+                    edit = edit.text_color(egui::Color32::from_rgb(180, 0, 0));
+                }
+                let resp = ui.add(edit);
+                if resp.changed() && note.apply_input() {
+                    changed = true;
+                }
+                if resp.lost_focus() && note.apply_input() {
+                    note.sync_input();
+                }
+                if note.alarm.is_some() {
+                    let before = note.repeat;
+                    egui::ComboBox::from_id_salt(("repeat", i))
+                        .selected_text(note.repeat.label())
+                        .show_ui(ui, |ui| {
+                            for r in Repeat::ALL {
+                                ui.selectable_value(&mut note.repeat, r, r.label());
+                            }
+                        });
+                    changed |= note.repeat != before;
+                }
+                if ui.small_button("Supprimer").clicked() {
+                    delete = true;
+                }
+            });
+        });
+    (changed, delete)
+}
+
+fn lighten(c: egui::Color32) -> egui::Color32 {
+    let f = |v: u8| v + (255 - v) / 2;
+    egui::Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+}
+
+fn darken(c: egui::Color32) -> egui::Color32 {
+    let f = |v: u8| (v as u16 * 85 / 100) as u8;
+    egui::Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+}
+
+fn settings_ui(ui: &mut egui::Ui, form: &mut SettingsForm, actions: &mut Vec<Action>) {
+    ui.heading("Réglages");
+    ui.add_space(8.0);
+    let s = &mut form.settings;
+    egui::Grid::new("settings")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            ui.label("Raccourci global");
+            let mut hk = s.hotkey.clone().unwrap_or_default();
+            let valid = hk.trim().is_empty() || hk.parse::<global_hotkey::hotkey::HotKey>().is_ok();
+            let mut edit = egui::TextEdit::singleline(&mut hk)
+                .hint_text("désactivé")
+                .desired_width(180.0);
+            if !valid {
+                edit = edit.text_color(ui.visuals().error_fg_color);
+            }
+            if ui
+                .add(edit)
+                .on_hover_text("Ex. Ctrl+Shift+Space, Ctrl+Alt+P")
+                .changed()
+            {
+                s.hotkey = (!hk.trim().is_empty()).then(|| hk.trim().to_string());
+            }
+            ui.end_row();
+
+            ui.label("Zone de notification");
+            ui.vertical(|ui| {
+                ui.checkbox(&mut s.tray, "Icône dans la zone de notification");
+                ui.add_enabled(
+                    s.tray,
+                    egui::Checkbox::new(&mut s.close_to_tray, "La croix masque la fenêtre"),
+                );
+                ui.add_enabled(
+                    s.tray,
+                    egui::Checkbox::new(&mut s.start_hidden, "Démarrer masqué"),
+                );
+            });
+            ui.end_row();
+
+            ui.label("Coin actif");
+            ui.vertical(|ui| {
+                egui::ComboBox::from_id_salt("corner")
+                    .selected_text(s.hot_corner.label())
+                    .show_ui(ui, |ui| {
+                        for c in Corner::ALL {
+                            ui.selectable_value(&mut s.hot_corner, c, c.label());
+                        }
+                    });
+                ui.add_enabled_ui(s.hot_corner != Corner::None, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut s.hot_corner_delay)
+                                .range(0..=3000)
+                                .suffix(" ms"),
+                        );
+                        ui.label("délai");
+                        ui.add(
+                            egui::DragValue::new(&mut s.hot_corner_size)
+                                .range(1..=100)
+                                .suffix(" px"),
+                        );
+                        ui.label("taille du coin");
+                    });
+                });
+            });
+            ui.end_row();
+
+            ui.label("Windows");
+            ui.add_enabled(
+                cfg!(windows),
+                egui::Checkbox::new(&mut form.autostart, "Démarrer avec Windows"),
+            );
+            ui.end_row();
+        });
+    ui.add_space(6.0);
+    ui.weak("Le raccourci global et l'icône de notification s'appliquent au prochain démarrage.");
+    ui.weak(format!("Fichier : {}", settings::FILE_NAME));
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        if ui.button("Enregistrer").clicked() {
+            actions.push(Action::SaveSettings);
+        }
+        if ui.button("Annuler").clicked() {
+            actions.push(Action::CloseDialog);
+        }
+    });
 }
 
 fn matches(e: &config::FlatEntry, query: &str) -> bool {

@@ -44,17 +44,32 @@ vous gardez votre arborescence de raccourcis telle quelle.
 - **Recherche dans le menu Démarrer** (utilisateur et tous les utilisateurs),
   selon les options `<search>` de PStart et ses couleurs ; clic droit sur un
   résultat → « Ajouter à PStart ».
+- **Notes avec alarmes** (onglet *Notes*) : cartes colorées avec la palette de
+  PStart, alarme `AAAA/MM/JJ HH:MM` unique, quotidienne ou hebdomadaire. Le
+  rappel s'affiche au premier plan même fenêtre masquée ; les alarmes manquées
+  pendant que l'ordinateur était éteint sont signalées au démarrage. Les notes
+  sont stockées dans `pstart-rs-notes.xml`, à côté de `PStart.xml`.
+- **Coin actif** : laisser la souris un instant dans un coin (ou contre un
+  bord) de l'écran principal affiche la fenêtre.
+- **Démarrer avec Windows** (réglages ou menu de l'icône) : valeur `PStart-rs`
+  dans `HKCU\…\Run`, distincte de celle de PStart. Chemin absolu : réactivez
+  l'option si la clé USB change de lettre.
+- **Fenêtre de réglages** (bouton ⚙).
 
 ## Réglages
 
-Au premier lancement, un fichier `pstart-rs.ini` est créé à côté de
-`PStart.xml` (PStart-rs n'ajoute rien dans le fichier de PStart) :
+Les réglages se modifient avec le bouton ⚙ ou directement dans
+`pstart-rs.ini`, créé à côté de `PStart.xml` au premier lancement (PStart-rs
+n'ajoute rien dans le fichier de PStart) :
 
 ```ini
 hotkey=Ctrl+Shift+Space   ; vide pour désactiver ; ex. Ctrl+Alt+P, Shift+Super+S
 tray=true                 ; icône dans la zone de notification
 close_to_tray=true        ; la croix masque au lieu de quitter
 start_hidden=false        ; démarrer directement dans la zone de notification
+hot_corner=none           ; topleft, topright, bottomleft, bottomright, top, bottom, left, right
+hot_corner_delay=300      ; temps de présence dans la zone (ms)
+hot_corner_size=8         ; taille des coins (pixels)
 ```
 
 Relancez PStart-rs (menu de l'icône → « Quitter PStart-rs ») après modification.
@@ -107,7 +122,11 @@ cargo test -- --ignored
 | `hotkey.rs` | Raccourci clavier global (`global-hotkey`) |
 | `window.rs` | Affichage/masquage natif de la fenêtre |
 | `instance.rs` | Instance unique (mutex nommé) |
-| `settings.rs` | Lecture de `pstart-rs.ini` |
+| `settings.rs` | Lecture et écriture de `pstart-rs.ini` |
+| `notes.rs` | Notes et alarmes (`pstart-rs-notes.xml`) |
+| `alarms.rs` | Déclenchement des rappels |
+| `hotcorner.rs` | Coin ou bord actif |
+| `autostart.rs` | Démarrage avec Windows (registre) |
 | `app.rs` | Interface egui |
 
 ## Feuille de route
@@ -116,7 +135,7 @@ cargo test -- --ignored
   raccourci clavier global, instance unique.~~ ✔
 - ~~**v0.3** : édition (ajout, renommage, déplacement, glisser-déposer),
   recherche dans le menu Démarrer.~~ ✔
-- **v0.4** : capteurs de bords d'écran, notes et alarmes, démarrage avec Windows.
+- ~~**v0.4** : capteurs de bords d'écran, notes et alarmes, démarrage avec Windows.~~ ✔
 
 ## Licence
 
