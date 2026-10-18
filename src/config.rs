@@ -237,15 +237,19 @@ fn decode(bytes: &[u8]) -> String {
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
         let u: Vec<u16> = rest
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         return String::from_utf16_lossy(&u);
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
         let u: Vec<u16> = rest
-            .chunks_exact(2)
-            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_be_bytes(*c))
             .collect();
         return String::from_utf16_lossy(&u);
     }
@@ -344,6 +348,8 @@ mod tests {
     fn decodes_cp1252() {
         assert_eq!(decode(b"Vid\xe9o"), "Vidéo");
         assert_eq!(decode("Vidéo".as_bytes()), "Vidéo");
+        assert_eq!(decode(&[0xFF, 0xFE, b'V', 0, 0xE9, 0]), "Vé");
+        assert_eq!(decode(&[0xFE, 0xFF, 0, b'V', 0, 0xE9]), "Vé");
     }
 
     /// Vérifie l'aller-retour sur un vrai fichier :
