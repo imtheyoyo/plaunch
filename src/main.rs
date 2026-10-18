@@ -74,11 +74,16 @@ fn main() -> eframe::Result {
         .unwrap_or([460.0, 760.0]);
 
     let icon = settings.icon(settings_path.as_deref());
+    let width = if settings.compact {
+        app::COMPACT_WIDTH
+    } else {
+        size[0].max(560.0)
+    };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(window::title())
-            .with_inner_size([size[0].max(560.0), size[1]])
-            .with_min_inner_size([360.0, 300.0])
+            .with_inner_size([width, size[1]])
+            .with_min_inner_size([300.0, 300.0])
             .with_drag_and_drop(true)
             .with_icon(Arc::new(eframe::egui::IconData {
                 rgba: icon.rgba,

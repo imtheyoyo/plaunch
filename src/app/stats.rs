@@ -214,12 +214,7 @@ fn bar_row(
     }
     let font = egui::TextStyle::Body.resolve(ui.style());
     let text_color = visuals.text_color();
-    let galley = painter.layout(
-        label.to_string(),
-        font.clone(),
-        text_color,
-        rect.left() + label_w - x - 6.0,
-    );
+    let galley = painter.layout_no_wrap(label.to_string(), font.clone(), text_color);
     // Libellé sur une seule ligne, coupé s'il est trop long.
     let clip = egui::Rect::from_min_max(
         egui::pos2(x, rect.top()),

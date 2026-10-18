@@ -64,6 +64,36 @@ vous gardez votre arborescence de raccourcis telle quelle.
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.6
+
+- **Options par raccourci** (formulaire de modification) : paramètres de la
+  ligne de commande, description, fenêtre normale / réduite / agrandie,
+  **exécuter en tant qu'administrateur** (demande UAC) et **lancer au
+  démarrage** de PStart-rs. Les balises `parameters`, `description`,
+  `windowstate` et `autorun` sont celles de PStart ; `runasadmin` et
+  `favorite` sont propres à PStart-rs.
+- **Favoris** : épinglez un raccourci (clic droit ou panneau de détails). Ils
+  apparaissent dans une barre sous la recherche, en tête du menu de l'icône de
+  notification, et se lancent avec `Ctrl+1` à `Ctrl+9`.
+- **Changement de lettre de lecteur** : si la clé passe de `F:` à `E:`,
+  PStart-rs propose de corriger les chemins absolus qui pointaient sur
+  l'ancienne lettre, et met à jour « Démarrer avec Windows ». Correction
+  manuelle possible depuis les réglages.
+- **Navigation au clavier** : flèches haut/bas dans l'arbre et les résultats
+  de recherche, droite/gauche pour ouvrir/fermer un groupe, `Entrée` lance.
+- **Mode compact** (bouton ◧) : la fenêtre se réduit à la recherche, aux
+  favoris et à la liste.
+- **Rappels en notification Windows** (au choix : notification, boîte de
+  message ou les deux).
+- **Coin actif sur tous les écrans**.
+- **Sauvegarde / restauration** : `PStart.xml`, notes et réglages dans un zip
+  (les fichiers remplacés sont gardés en `.avant-restauration`).
+- **Mise à jour intégrée** : vérification au démarrage, téléchargement de la
+  dernière version publiée, remplacement de l'exécutable sur la clé et
+  relance.
+- **Statistiques** (onglet) : totaux, raccourcis les plus lancés, ancienneté
+  du dernier lancement, raccourcis introuvables avec nettoyage en un clic.
+
 ## Réglages
 
 Les réglages se modifient avec le bouton ⚙ ou directement dans
@@ -84,6 +114,11 @@ text_size=100             ; pourcentage (70-200)
 icon_shape=play           ; play, star, grid, bolt
 icon_color=blue           ; blue, green, orange, purple, red, gray
 icon_file=                ; ex. _Icones\pstart.ico (prioritaire sur forme/couleur)
+hot_corner_all_screens=true ; coin actif sur chaque écran
+reminders=toast           ; toast, dialog, both
+compact=false             ; mode compact
+check_updates=true        ; vérifier les mises à jour au démarrage
+last_drive=F              ; géré automatiquement (détection du changement de lettre)
 ```
 
 Depuis la fenêtre ⚙, tout s'applique immédiatement, sauf le raccourci global
@@ -144,7 +179,9 @@ cargo test -- --ignored
 | `hotcorner.rs` | Coin ou bord actif |
 | `autostart.rs` | Démarrage avec Windows (registre) |
 | `i18n.rs` | Traductions (le texte français sert de clé, anglais en table) |
-| `app.rs` | Interface egui |
+| `backup.rs` | Sauvegarde et restauration (zip) |
+| `update.rs` | Mise à jour depuis GitHub Releases |
+| `app.rs`, `app/stats.rs` | Interface egui, vue Statistiques |
 
 ## Feuille de route
 
@@ -154,6 +191,9 @@ cargo test -- --ignored
   recherche dans le menu Démarrer.~~ ✔
 - ~~**v0.4** : capteurs de bords d'écran, notes et alarmes, démarrage avec Windows.~~ ✔
 - ~~**v0.5** : langue, thème, taille du texte et icône personnalisable.~~ ✔
+- ~~**v0.6** : options des raccourcis (paramètres, administrateur…), favoris,
+  lettre de lecteur, clavier et mode compact, notifications, multi-écran,
+  sauvegarde, mise à jour intégrée, statistiques.~~ ✔
 
 ## Licence
 

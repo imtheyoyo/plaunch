@@ -62,7 +62,7 @@ impl View {
 }
 
 /// Largeur de la fenêtre en mode compact.
-const COMPACT_WIDTH: f32 = 340.0;
+pub const COMPACT_WIDTH: f32 = 340.0;
 
 /// Charge utile d'un glisser-déposer interne.
 #[derive(Clone)]
@@ -285,7 +285,10 @@ impl PStartApp {
         };
         if let Some(f) = file {
             app.open(&f);
-            app.run_autorun();
+            // Pas de relance des programmes « au démarrage » après une mise à jour.
+            if std::env::var_os(update::RESTART_ENV).is_none() {
+                app.run_autorun();
+            }
         }
         if app.settings.check_updates {
             app.check_update(true);
@@ -2246,11 +2249,14 @@ fn drive_fix_ui(
     ui.add_space(6.0);
     egui::Grid::new("drive").num_columns(2).show(ui, |ui| {
         ui.label(tr("Ancienne lettre"));
-        ui.add(
+        let r = ui.add(
             egui::TextEdit::singleline(old)
                 .desired_width(40.0)
                 .char_limit(2),
         );
+        if old.is_empty() && ui.memory(|m| m.focused().is_none()) {
+            r.request_focus();
+        }
         ui.end_row();
         ui.label(tr("Nouvelle lettre"));
         ui.add(
