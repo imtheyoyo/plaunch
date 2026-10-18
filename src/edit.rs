@@ -5,6 +5,7 @@
 //! Les éléments créés suivent l'ordre de balises de PStart.
 
 use crate::config::{Config, ItemPath};
+use crate::i18n::tr;
 use crate::xml::Element;
 
 /// Élément à créer.
@@ -107,7 +108,7 @@ pub fn insert(
 
 /// Renomme un raccourci ou un groupe.
 pub fn rename(cfg: &mut Config, path: &[usize], name: &str) -> Result<(), String> {
-    let el = node_mut(files_mut(cfg), path).ok_or("élément introuvable")?;
+    let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
     set_name(el, name);
     Ok(())
 }
@@ -162,9 +163,9 @@ pub fn update_entry(
 /// Supprime un raccourci ou un groupe (avec son contenu).
 pub fn delete(cfg: &mut Config, path: &[usize]) -> Result<Element, String> {
     let (&idx, parent) = path.split_last().ok_or("chemin vide")?;
-    let group = node_mut(files_mut(cfg), parent).ok_or("élément introuvable")?;
+    let group = node_mut(files_mut(cfg), parent).ok_or(tr("élément introuvable"))?;
     if idx >= group.children.len() {
-        return Err("élément introuvable".into());
+        return Err(tr("élément introuvable").into());
     }
     Ok(group.children.remove(idx))
 }
@@ -180,7 +181,7 @@ pub fn move_item(
 ) -> Result<ItemPath, String> {
     let (&fi, fp) = from.split_last().ok_or("chemin vide")?;
     if to_parent.starts_with(from) {
-        return Err("impossible de déplacer un groupe dans lui-même".into());
+        return Err(tr("impossible de déplacer un groupe dans lui-même").into());
     }
     group_mut(cfg, to_parent)?;
 

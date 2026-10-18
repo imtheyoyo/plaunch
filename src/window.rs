@@ -11,7 +11,13 @@ static HWND: AtomicIsize = AtomicIsize::new(0);
 
 // Titre distinctif : sert aussi à retrouver la fenêtre (instance unique),
 // il ne doit pas pouvoir correspondre à un dossier ouvert dans l'Explorateur.
+// Le titre est traduit : l'instance unique cherche les deux variantes.
 pub const TITLE: &str = "PStart-rs · Lanceur portable";
+
+/// Titre dans la langue de l'interface.
+pub fn title() -> &'static str {
+    crate::i18n::tr(TITLE)
+}
 
 pub fn set_handle(hwnd: isize) {
     HWND.store(hwnd, Ordering::SeqCst);
@@ -133,5 +139,5 @@ pub fn request_close() -> bool {
 }
 
 pub fn activate_existing() -> bool {
-    imp::activate_existing(TITLE)
+    imp::activate_existing(TITLE) || imp::activate_existing(crate::i18n::english(TITLE))
 }

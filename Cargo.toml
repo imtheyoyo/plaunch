@@ -1,6 +1,6 @@
 [package]
 name = "pstart-rs"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Lanceur portable pour clé USB, compatible avec les fichiers PStart.xml"
 license = "MIT"
@@ -19,6 +19,7 @@ rfd = "0.17"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Storage_FileSystem",

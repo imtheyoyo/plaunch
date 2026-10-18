@@ -8,6 +8,7 @@ mod config;
 mod edit;
 mod hotcorner;
 mod hotkey;
+mod i18n;
 mod icons;
 mod instance;
 mod launcher;
@@ -46,16 +47,23 @@ fn main() -> eframe::Result {
     }
 
     let file = find_config();
+    let settings_path = file.as_deref().map(settings::path_for);
+    let settings = settings_path
+        .as_deref()
+        .map(settings::load)
+        .unwrap_or_default();
+    i18n::set_language(settings.language);
+
     let size = file
         .as_deref()
         .and_then(|f| config::Config::load(f).ok())
         .and_then(|c| c.window_size())
         .unwrap_or([460.0, 760.0]);
 
-    let icon = icons::app_icon();
+    let icon = settings.icon(settings_path.as_deref());
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title(window::TITLE)
+            .with_title(window::title())
             .with_inner_size([size[0].max(560.0), size[1]])
             .with_min_inner_size([360.0, 300.0])
             .with_drag_and_drop(true)
@@ -69,6 +77,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "PStart-rs",
         options,
-        Box::new(move |cc| Ok(Box::new(app::PStartApp::new(cc, file)))),
+        Box::new(move |cc| Ok(Box::new(app::PStartApp::new(cc, file, settings)))),
     )
 }

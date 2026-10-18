@@ -11,6 +11,7 @@ use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIc
 
 use crate::autostart;
 use crate::config;
+use crate::i18n::{tr, trf};
 use crate::icons;
 use crate::state::Shared;
 use crate::window;
@@ -30,24 +31,29 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(shared: &Arc<Shared>) -> Result<Tray, String> {
+    pub fn new(shared: &Arc<Shared>, app: &icons::IconImage) -> Result<Tray, String> {
         install_handlers(shared.clone());
-        let app = icons::app_icon();
-        let icon = tray_icon::Icon::from_rgba(app.rgba, app.width, app.height)
-            .map_err(|e| e.to_string())?;
+        let icon = to_tray_icon(app)?;
         let tray = TrayIconBuilder::new()
-            .with_tooltip(window::TITLE)
+            .with_tooltip(window::title())
             .with_icon(icon)
             .with_menu(Box::new(build_menu(shared)))
             .with_menu_on_left_click(false)
             .build()
-            .map_err(|e| format!("icône de notification : {e}"))?;
+            .map_err(|e| trf("icône de notification : {}", &[&e]))?;
         Ok(Tray {
             icon: tray,
             built_icons: shared.icons_version.load(Ordering::SeqCst),
             built_generation: shared.generation.load(Ordering::SeqCst),
             built_structure: shared.structure_version.load(Ordering::SeqCst),
         })
+    }
+
+    /// Change l'icône affichée dans la zone de notification.
+    pub fn set_icon(&self, app: &icons::IconImage) -> Result<(), String> {
+        self.icon
+            .set_icon(Some(to_tray_icon(app)?))
+            .map_err(|e| e.to_string())
     }
 
     /// Reconstruit le menu si le fichier a été rechargé ou si de nouvelles
@@ -61,11 +67,17 @@ impl Tray {
             || structure != self.built_structure
         {
             self.icon.set_menu(Some(Box::new(build_menu(shared))));
+            // La langue a pu changer.
+            let _ = self.icon.set_tooltip(Some(window::title()));
             self.built_icons = icons;
             self.built_generation = generation;
             self.built_structure = structure;
         }
     }
+}
+
+fn to_tray_icon(app: &icons::IconImage) -> Result<tray_icon::Icon, String> {
+    tray_icon::Icon::from_rgba(app.rgba.clone(), app.width, app.height).map_err(|e| e.to_string())
 }
 
 fn install_handlers(shared: Arc<Shared>) {
@@ -124,7 +136,7 @@ fn build_menu(shared: &Shared) -> Menu {
     let menu = Menu::new();
     let _ = menu.append(&MenuItem::with_id(
         ID_SHOW,
-        "Afficher PStart-rs",
+        tr("Afficher PStart-rs"),
         true,
         None,
     ));
@@ -146,16 +158,21 @@ fn build_menu(shared: &Shared) -> Menu {
     }
     drop(guard);
 
-    let _ = menu.append(&MenuItem::with_id(ID_NOTES, "Notes…", true, None));
+    let _ = menu.append(&MenuItem::with_id(ID_NOTES, tr("Notes…"), true, None));
     let _ = menu.append(&CheckMenuItem::with_id(
         ID_AUTOSTART,
-        "Démarrer avec Windows",
+        tr("Démarrer avec Windows"),
         true,
         autostart::is_enabled(),
         None,
     ));
     let _ = menu.append(&PredefinedMenuItem::separator());
-    let _ = menu.append(&MenuItem::with_id(ID_QUIT, "Quitter PStart-rs", true, None));
+    let _ = menu.append(&MenuItem::with_id(
+        ID_QUIT,
+        tr("Quitter PStart-rs"),
+        true,
+        None,
+    ));
     menu
 }
 
@@ -168,9 +185,9 @@ fn toggle_autostart(shared: &Shared) {
         .as_ref()
         .map(|c| c.file.clone());
     match autostart::set(enable, file.as_deref()) {
-        Ok(()) if enable => shared.set_status("Démarrage avec Windows activé"),
-        Ok(()) => shared.set_status("Démarrage avec Windows désactivé"),
-        Err(e) => shared.set_status(format!("Démarrage avec Windows : {e}")),
+        Ok(()) if enable => shared.set_status(tr("Démarrage avec Windows activé")),
+        Ok(()) => shared.set_status(tr("Démarrage avec Windows désactivé")),
+        Err(e) => shared.set_status(trf("Démarrage avec Windows : {}", &[&e])),
     }
     // Reconstruit le menu pour refléter l'état réel.
     shared.structure_version.fetch_add(1, Ordering::SeqCst);
@@ -190,7 +207,7 @@ fn build_items(
                 let sub = Submenu::new(menu_label(config::display_name(child)), true);
                 let items = build_items(cfg, child, path, icons);
                 if items.is_empty() {
-                    let _ = sub.append(&MenuItem::new("(vide)", false, None));
+                    let _ = sub.append(&MenuItem::new(tr("(vide)"), false, None));
                 }
                 for item in &items {
                     let _ = sub.append(item.as_ref());

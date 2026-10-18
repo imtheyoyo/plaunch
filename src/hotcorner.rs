@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::i18n::tr;
 use crate::state::Shared;
 use crate::window;
 
@@ -51,15 +52,15 @@ impl Corner {
 
     pub fn label(self) -> &'static str {
         match self {
-            Corner::None => "désactivé",
-            Corner::TopLeft => "coin haut gauche",
-            Corner::TopRight => "coin haut droit",
-            Corner::BottomLeft => "coin bas gauche",
-            Corner::BottomRight => "coin bas droit",
-            Corner::Top => "bord haut",
-            Corner::Bottom => "bord bas",
-            Corner::Left => "bord gauche",
-            Corner::Right => "bord droit",
+            Corner::None => tr("désactivé"),
+            Corner::TopLeft => tr("coin haut gauche"),
+            Corner::TopRight => tr("coin haut droit"),
+            Corner::BottomLeft => tr("coin bas gauche"),
+            Corner::BottomRight => tr("coin bas droit"),
+            Corner::Top => tr("bord haut"),
+            Corner::Bottom => tr("bord bas"),
+            Corner::Left => tr("bord gauche"),
+            Corner::Right => tr("bord droit"),
         }
     }
 

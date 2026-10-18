@@ -12,8 +12,11 @@ use eframe::egui;
 use crate::config::{self, Config, ItemPath, SearchOptions};
 use crate::edit::{self, NewItem};
 use crate::hotcorner::Corner;
+use crate::i18n::{self, Language};
+use crate::i18n::{tr, trf};
+use crate::icons::{IconColor, IconShape};
 use crate::notes::{Note, Notes, Repeat};
-use crate::settings::{self, Settings};
+use crate::settings::{self, Settings, Theme};
 use crate::startmenu::{self, Source, StartItem};
 use crate::state::Shared;
 use crate::xml::Element;
@@ -40,6 +43,7 @@ enum Browse {
     EntryPath,
     WorkingDir,
     AddFiles,
+    IconFile,
 }
 
 /// Action demandée pendant le dessin, appliquée ensuite, une fois la
@@ -110,17 +114,22 @@ impl EditForm {
 
     fn title(&self) -> &'static str {
         match self.kind {
-            FormKind::NewEntry { .. } => "Nouveau raccourci",
-            FormKind::EditEntry(_) => "Modifier le raccourci",
-            FormKind::NewGroup { .. } => "Nouveau groupe",
-            FormKind::RenameGroup(_) => "Renommer le groupe",
+            FormKind::NewEntry { .. } => tr("Nouveau raccourci"),
+            FormKind::EditEntry(_) => tr("Modifier le raccourci"),
+            FormKind::NewGroup { .. } => tr("Nouveau groupe"),
+            FormKind::RenameGroup(_) => tr("Renommer le groupe"),
         }
     }
 }
 
+/// Ce dont dépend l'aperçu de l'icône.
+type IconKey = (IconShape, IconColor, Option<String>);
+
 struct SettingsForm {
     settings: Settings,
     autostart: bool,
+    settings_path: Option<PathBuf>,
+    preview: Option<(IconKey, egui::TextureHandle)>,
 }
 
 enum Dialog {
@@ -162,16 +171,18 @@ pub struct PStartApp {
 }
 
 impl PStartApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, file: Option<PathBuf>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        file: Option<PathBuf>,
+        settings: Settings,
+    ) -> Self {
         let shared = Arc::new(Shared::default());
         let _ = shared.ctx.set(cc.egui_ctx.clone());
         window::capture(cc);
 
         let settings_path = file.as_deref().map(settings::path_for);
-        let settings = settings_path
-            .as_deref()
-            .map(settings::load)
-            .unwrap_or_default();
+        i18n::set_language(settings.language);
+        apply_appearance(&cc.egui_ctx, &settings);
         *shared.hot_corner.lock().unwrap() = (
             settings.hot_corner,
             settings.hot_corner_delay,
@@ -217,7 +228,8 @@ impl PStartApp {
         }
         let mut problems = Vec::new();
         if self.settings.tray {
-            match tray::Tray::new(&self.shared) {
+            let icon = self.settings.icon(self.settings_path.as_deref());
+            match tray::Tray::new(&self.shared, &icon) {
                 Ok(t) => self.tray = Some(t),
                 Err(e) => problems.push(e),
             }
@@ -255,14 +267,14 @@ impl PStartApp {
                 let mut targets: Vec<String> =
                     cfg.flatten().into_iter().map(|e| e.target).collect();
                 self.shared
-                    .set_status(format!("{} raccourcis chargés", targets.len()));
+                    .set_status(trf("{} raccourcis chargés", &[&targets.len()]));
                 self.exists.clear();
                 self.check_existence(targets.clone());
                 self.shared.icons.lock().unwrap().clear();
                 self.textures.clear();
                 self.flush_notes();
                 let notes = Notes::load(&notes::path_for(&cfg.file)).unwrap_or_else(|e| {
-                    self.shared.set_status(format!("Notes illisibles : {e}"));
+                    self.shared.set_status(trf("Notes illisibles : {}", &[&e]));
                     Notes {
                         file: notes::path_for(&cfg.file),
                         items: Vec::new(),
@@ -324,20 +336,64 @@ impl PStartApp {
                 .as_ref()
                 .map(|c| c.file.clone());
             if let Err(e) = autostart::set(form.autostart, file.as_deref()) {
-                messages.push(format!("Démarrage avec Windows : {e}"));
+                messages.push(trf("Démarrage avec Windows : {}", &[&e]));
             }
             self.shared.structure_version.fetch_add(1, Ordering::SeqCst);
         }
         let restart = new.hotkey != self.settings.hotkey || new.tray != self.settings.tray;
-        self.settings = new;
+        let old = std::mem::replace(&mut self.settings, new);
+        let ctx = self.shared.ctx.get().cloned();
+        if old.language != self.settings.language {
+            i18n::set_language(self.settings.language);
+            if let Some(ctx) = &ctx {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(window::title().into()));
+            }
+            // Menu de la zone de notification à reconstruire.
+            self.shared.structure_version.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(ctx) = &ctx {
+            apply_appearance(ctx, &self.settings);
+        }
+        let icon_key = |s: &Settings| (s.icon_shape, s.icon_color, s.icon_file.clone());
+        if icon_key(&old) != icon_key(&self.settings) {
+            if let Some(e) = self.apply_icon() {
+                messages.push(e);
+            }
+        }
         if messages.is_empty() {
             messages.push(if restart {
-                "Réglages enregistrés (raccourci et icône : au prochain démarrage)".into()
+                tr("Réglages enregistrés (raccourci global et zone de notification : au prochain démarrage)").into()
             } else {
-                "Réglages enregistrés".into()
+                tr("Réglages enregistrés").into()
             });
         }
         self.shared.set_status(messages.join(" ; "));
+    }
+
+    /// Applique l'icône des réglages à la fenêtre et à la zone de
+    /// notification ; renvoie un message si le fichier choisi est illisible.
+    fn apply_icon(&mut self) -> Option<String> {
+        let path = self.settings.icon_path(self.settings_path.as_deref());
+        let img = self.settings.icon(self.settings_path.as_deref());
+        if let Some(ctx) = self.shared.ctx.get() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(Arc::new(
+                egui::IconData {
+                    rgba: img.rgba.clone(),
+                    width: img.width,
+                    height: img.height,
+                },
+            ))));
+        }
+        let mut problem = None;
+        if let Some(t) = &self.tray {
+            if let Err(e) = t.set_icon(&img) {
+                problem = Some(trf("Icône : {}", &[&e]));
+            }
+        }
+        if path.is_some_and(|p| !paths::to_native(&p).is_file()) {
+            problem = Some(trf("Icône : {}", &[&tr("fichier introuvable")]));
+        }
+        problem
     }
 
     fn reload(&mut self) {
@@ -468,7 +524,7 @@ impl PStartApp {
             Action::Delete(p) => {
                 if self.shared.modify(|c| edit::delete(c, &p)).is_some() {
                     self.selected = None;
-                    self.shared.set_status("Supprimé");
+                    self.shared.set_status(tr("Supprimé"));
                 }
                 self.dialog = None;
             }
@@ -494,6 +550,8 @@ impl PStartApp {
                 self.dialog = Some(Dialog::Settings(SettingsForm {
                     settings: self.settings.clone(),
                     autostart: autostart::is_enabled(),
+                    settings_path: self.settings_path.clone(),
+                    preview: None,
                 }))
             }
             Action::SaveSettings => self.save_settings(),
@@ -531,8 +589,8 @@ impl PStartApp {
         if let Some(Some(p)) = last {
             self.selected = Some(p);
             self.shared.set_status(match count {
-                1 => "Raccourci ajouté".to_string(),
-                n => format!("{n} raccourcis ajoutés"),
+                1 => tr("Raccourci ajouté").to_string(),
+                n => trf("{} raccourcis ajoutés", &[&n]),
             });
             for t in targets {
                 self.refresh_target(t);
@@ -615,11 +673,32 @@ impl PStartApp {
         match kind {
             Browse::AddFiles => {
                 if let Some(files) = rfd::FileDialog::new()
-                    .set_title("Ajouter des raccourcis")
+                    .set_title(tr("Ajouter des raccourcis"))
                     .set_directory(&start)
                     .pick_files()
                 {
                     self.apply(Action::AddFiles(files));
+                }
+            }
+            Browse::IconFile => {
+                let Some(Dialog::Settings(form)) = &mut self.dialog else {
+                    return;
+                };
+                let dir = form
+                    .settings_path
+                    .as_deref()
+                    .and_then(Path::parent)
+                    .map(|d| d.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let picked = rfd::FileDialog::new()
+                    .set_title(tr("Choisir une icône"))
+                    .set_directory(paths::to_native(&dir))
+                    .add_filter(tr("Icônes et programmes"), &["ico", "exe", "dll"])
+                    .add_filter(tr("Tous les fichiers"), &["*"])
+                    .pick_file();
+                if let Some(p) = picked {
+                    let full = p.to_string_lossy().into_owned();
+                    form.settings.icon_file = Some(paths::make_relative(&full, &dir));
                 }
             }
             Browse::EntryPath | Browse::WorkingDir => {
@@ -628,12 +707,12 @@ impl PStartApp {
                 };
                 let picked = if matches!(kind, Browse::EntryPath) {
                     rfd::FileDialog::new()
-                        .set_title("Choisir le programme ou le document")
+                        .set_title(tr("Choisir le programme ou le document"))
                         .set_directory(&start)
                         .pick_file()
                 } else {
                     rfd::FileDialog::new()
-                        .set_title("Choisir le dossier de travail")
+                        .set_title(tr("Choisir le dossier de travail"))
                         .set_directory(&start)
                         .pick_folder()
                 };
@@ -662,11 +741,11 @@ impl PStartApp {
         let path = form.path.trim().to_string();
         let directory = form.directory.trim().to_string();
         if name.is_empty() {
-            form.error = Some("Le nom est obligatoire.".into());
+            form.error = Some(tr("Le nom est obligatoire.").into());
             return;
         }
         if !form.is_group() && path.is_empty() {
-            form.error = Some("Le chemin est obligatoire.".into());
+            form.error = Some(tr("Le chemin est obligatoire.").into());
             return;
         }
         let dir = (!directory.is_empty()).then_some(directory);
@@ -705,7 +784,7 @@ impl PStartApp {
             let is_group = form.is_group();
             self.selected = Some(p);
             self.dialog = None;
-            self.shared.set_status("Enregistré");
+            self.shared.set_status(tr("Enregistré"));
             if !is_group {
                 let target = self.resolve_path(&path);
                 self.refresh_target(target);
@@ -718,7 +797,7 @@ impl PStartApp {
     fn top_bar(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>, has_config: bool) {
         ui.horizontal(|ui| {
             let search = egui::TextEdit::singleline(&mut self.search)
-                .hint_text("Rechercher… (Ctrl+F)")
+                .hint_text(tr("Rechercher… (Ctrl+F)"))
                 .desired_width(f32::INFINITY);
             let resp = ui.add(search);
             self.search_id = Some(resp.id);
@@ -728,35 +807,35 @@ impl PStartApp {
             }
         });
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.view, View::Tree, "Arborescence");
-            ui.selectable_value(&mut self.view, View::MostUsed, "Plus utilisés");
-            ui.selectable_value(&mut self.view, View::Recent, "Récents");
-            ui.selectable_value(&mut self.view, View::Notes, "Notes");
+            ui.selectable_value(&mut self.view, View::Tree, tr("Arborescence"));
+            ui.selectable_value(&mut self.view, View::MostUsed, tr("Plus utilisés"));
+            ui.selectable_value(&mut self.view, View::Recent, tr("Récents"));
+            ui.selectable_value(&mut self.view, View::Notes, tr("Notes"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("⚙").on_hover_text("Réglages").clicked() {
+                if ui.button("⚙").on_hover_text(tr("Réglages")).clicked() {
                     actions.push(Action::OpenSettings);
                 }
                 if ui
                     .button("⟳")
-                    .on_hover_text("Recharger le fichier")
+                    .on_hover_text(tr("Recharger le fichier"))
                     .clicked()
                 {
                     actions.push(Action::Reload);
                 }
                 ui.add_enabled_ui(has_config, |ui| {
                     ui.menu_button("＋", |ui| {
-                        if ui.button("Nouveau raccourci…").clicked() {
+                        if ui.button(tr("Nouveau raccourci…")).clicked() {
                             actions.push(Action::NewEntry(None));
                         }
-                        if ui.button("Nouveau groupe…").clicked() {
+                        if ui.button(tr("Nouveau groupe…")).clicked() {
                             actions.push(Action::NewGroup(None));
                         }
-                        if ui.button("Ajouter des fichiers…").clicked() {
+                        if ui.button(tr("Ajouter des fichiers…")).clicked() {
                             actions.push(Action::Browse(Browse::AddFiles));
                         }
                     })
                     .response
-                    .on_hover_text("Ajouter (vous pouvez aussi déposer des fichiers ici)");
+                    .on_hover_text(tr("Ajouter (vous pouvez aussi déposer des fichiers ici)"));
                 });
             });
         });
@@ -817,20 +896,22 @@ impl PStartApp {
         let palette = cfg.palette();
         let mut guard = self.shared.notes.lock().unwrap();
         let Some(notes) = guard.as_mut() else {
-            ui.weak("Notes indisponibles.");
+            ui.weak(tr("Notes indisponibles."));
             return;
         };
         let mut changed = false;
         ui.horizontal(|ui| {
-            if ui.button("＋ Nouvelle note").clicked() {
+            if ui.button(tr("＋ Nouvelle note")).clicked() {
                 notes.items.insert(0, Note::new(cfg.default_note_color()));
                 changed = true;
             }
-            ui.weak(format!("Enregistrées dans {}", notes::FILE_NAME));
+            ui.weak(trf("Enregistrées dans {}", &[&notes::FILE_NAME]));
         });
         ui.add_space(6.0);
         if notes.items.is_empty() {
-            ui.weak("Aucune note. Les alarmes s'affichent même fenêtre masquée.");
+            ui.weak(tr(
+                "Aucune note. Les alarmes s'affichent même fenêtre masquée.",
+            ));
         }
         let mut delete = None;
         for (i, note) in notes.items.iter_mut().enumerate() {
@@ -899,7 +980,7 @@ impl PStartApp {
             }
         }
         if !any {
-            ui.weak("Aucun résultat.");
+            ui.weak(tr("Aucun résultat."));
         }
     }
 
@@ -908,8 +989,8 @@ impl PStartApp {
             ui.add_space(40.0);
             ui.heading("PStart-rs");
             ui.add_space(12.0);
-            ui.label("Glissez un fichier PStart.xml sur cette fenêtre,");
-            ui.label("ou placez pstart-rs.exe à côté de votre PStart.xml.");
+            ui.label(tr("Glissez un fichier PStart.xml sur cette fenêtre,"));
+            ui.label(tr("ou placez pstart-rs.exe à côté de votre PStart.xml."));
             if let Some(e) = &self.load_error {
                 ui.add_space(12.0);
                 ui.colored_label(ui.visuals().error_fg_color, e);
@@ -923,7 +1004,7 @@ impl PStartApp {
             return actions;
         };
         let Some(sel) = &self.selected else {
-            ui.weak("Sélectionnez un raccourci.");
+            ui.weak(tr("Sélectionnez un raccourci."));
             ui.add_space(16.0);
             self.shortcuts_help(ui);
             return actions;
@@ -933,19 +1014,19 @@ impl PStartApp {
         };
         if el.name == "files" {
             ui.heading(config::display_name(el));
-            ui.weak(format!("{} raccourcis", edit::count_entries(el)));
+            ui.weak(trf("{} raccourcis", &[&edit::count_entries(el)]));
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
-                if ui.button("＋ Raccourci").clicked() {
+                if ui.button(tr("＋ Raccourci")).clicked() {
                     actions.push(Action::NewEntry(Some(sel.clone())));
                 }
-                if ui.button("＋ Groupe").clicked() {
+                if ui.button(tr("＋ Groupe")).clicked() {
                     actions.push(Action::NewGroup(Some(sel.clone())));
                 }
-                if ui.button("Renommer").clicked() {
+                if ui.button(tr("Renommer")).clicked() {
                     actions.push(Action::Edit(sel.clone()));
                 }
-                if ui.button("Supprimer").clicked() {
+                if ui.button(tr("Supprimer")).clicked() {
                     actions.push(Action::AskDelete(sel.clone()));
                 }
             });
@@ -963,43 +1044,43 @@ impl PStartApp {
             .num_columns(2)
             .spacing([8.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Chemin");
+                ui.label(tr("Chemin"));
                 ui.add(egui::Label::new(config::entry_path(el)).wrap());
                 ui.end_row();
-                ui.label("Cible");
+                ui.label(tr("Cible"));
                 ui.add(egui::Label::new(&target).wrap());
                 ui.end_row();
                 if let Some(dir) = cfg.working_dir(el) {
-                    ui.label("Dossier");
+                    ui.label(tr("Dossier"));
                     ui.add(egui::Label::new(dir).wrap());
                     ui.end_row();
                 }
-                ui.label("État");
+                ui.label(tr("État"));
                 match self.exists.get(&target) {
-                    Some(true) => ui.label("présent"),
-                    Some(false) => ui.colored_label(ui.visuals().warn_fg_color, "introuvable"),
-                    None => ui.weak("vérification…"),
+                    Some(true) => ui.label(tr("présent")),
+                    Some(false) => ui.colored_label(ui.visuals().warn_fg_color, tr("introuvable")),
+                    None => ui.weak(tr("vérification…")),
                 };
                 ui.end_row();
-                ui.label("Lancements");
+                ui.label(tr("Lancements"));
                 ui.label(config::runcount(el).to_string());
                 ui.end_row();
-                ui.label("Dernier");
-                ui.label(el.child_text("rundate").unwrap_or("jamais"));
+                ui.label(tr("Dernier"));
+                ui.label(el.child_text("rundate").unwrap_or(tr("jamais")));
                 ui.end_row();
             });
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
-            if ui.button("▶ Lancer").clicked() {
+            if ui.button(tr("▶ Lancer")).clicked() {
                 actions.push(Action::Launch(sel.clone()));
             }
-            if ui.button("Modifier…").clicked() {
+            if ui.button(tr("Modifier…")).clicked() {
                 actions.push(Action::Edit(sel.clone()));
             }
-            if ui.button("Emplacement").clicked() {
+            if ui.button(tr("Emplacement")).clicked() {
                 actions.push(Action::Reveal(sel.clone()));
             }
-            if ui.button("Supprimer").clicked() {
+            if ui.button(tr("Supprimer")).clicked() {
                 actions.push(Action::AskDelete(sel.clone()));
             }
         });
@@ -1007,17 +1088,17 @@ impl PStartApp {
     }
 
     fn shortcuts_help(&self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Raccourcis").strong());
-        ui.weak("Entrée : lancer");
-        ui.weak("F2 : modifier, Suppr : supprimer");
-        ui.weak("Ctrl+F : rechercher, Échap : effacer");
-        ui.weak("Glisser-déposer : réorganiser");
+        ui.label(egui::RichText::new(tr("Raccourcis")).strong());
+        ui.weak(tr("Entrée : lancer"));
+        ui.weak(tr("F2 : modifier, Suppr : supprimer"));
+        ui.weak(tr("Ctrl+F : rechercher, Échap : effacer"));
+        ui.weak(tr("Glisser-déposer : réorganiser"));
         match &self.hotkey_info {
-            Some(hk) => ui.weak(format!("{hk} : afficher / masquer")),
-            None => ui.weak("Raccourci global : désactivé"),
+            Some(hk) => ui.weak(trf("{} : afficher / masquer", &[&hk])),
+            None => ui.weak(tr("Raccourci global : désactivé")),
         };
         ui.add_space(8.0);
-        ui.weak(format!("Réglages : {}", settings::FILE_NAME));
+        ui.weak(trf("Réglages : {}", &[&settings::FILE_NAME]));
     }
 
     fn dialog_ui(&mut self, ctx: &egui::Context, cfg: Option<&Config>, actions: &mut Vec<Action>) {
@@ -1026,32 +1107,38 @@ impl PStartApp {
             return;
         };
         let modal = egui::Modal::new(egui::Id::unique("pstart-dialog")).show(ctx, |ui| {
-            ui.set_width(420.0);
+            // La fenêtre peut être étroite (ou le texte agrandi).
+            let screen = ctx.content_rect();
+            ui.set_width(460.0f32.min(screen.width() - 40.0).max(200.0));
+            ui.set_max_height(screen.height() - 40.0);
             match dialog {
                 Dialog::Form(form) => form_ui(ui, form, &base, actions),
-                Dialog::Settings(form) => settings_ui(ui, form, actions),
+                Dialog::Settings(form) => {
+                    egui::ScrollArea::vertical().show(ui, |ui| settings_ui(ui, form, actions));
+                }
                 Dialog::ConfirmDelete {
                     path,
                     name,
                     count,
                     group,
                 } => {
-                    ui.heading("Supprimer");
+                    ui.heading(tr("Supprimer"));
                     ui.add_space(8.0);
                     if *group {
-                        ui.label(format!(
-                            "Supprimer le groupe « {name} » et ses {count} raccourcis ?"
+                        ui.label(trf(
+                            "Supprimer le groupe « {} » et ses {} raccourcis ?",
+                            &[name, count],
                         ));
                     } else {
-                        ui.label(format!("Supprimer le raccourci « {name} » ?"));
+                        ui.label(trf("Supprimer le raccourci « {} » ?", &[name]));
                     }
-                    ui.weak("Le programme lui-même n'est pas supprimé.");
+                    ui.weak(tr("Le programme lui-même n'est pas supprimé."));
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Supprimer").clicked() {
+                        if ui.button(tr("Supprimer")).clicked() {
                             actions.push(Action::Delete(path.clone()));
                         }
-                        if ui.button("Annuler").clicked() {
+                        if ui.button(tr("Annuler")).clicked() {
                             actions.push(Action::CloseDialog);
                         }
                     });
@@ -1253,7 +1340,7 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
         .num_columns(2)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
-            ui.label("Nom");
+            ui.label(tr("Nom"));
             let name = ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(300.0));
             if form.focus {
                 name.request_focus();
@@ -1262,7 +1349,7 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
             submit |= name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.end_row();
             if !form.is_group() {
-                ui.label("Chemin");
+                ui.label(tr("Chemin"));
                 ui.horizontal(|ui| {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut form.path)
@@ -1270,7 +1357,7 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
                             .hint_text("_Dossier\\programme.exe"),
                     );
                     submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if ui.button("Parcourir…").clicked() {
+                    if ui.button(tr("Parcourir…")).clicked() {
                         actions.push(Action::Browse(Browse::EntryPath));
                     }
                 });
@@ -1281,14 +1368,18 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
                     ui.add(egui::Label::new(egui::RichText::new(resolved).weak().small()).wrap());
                 }
                 ui.end_row();
-                ui.label("Dossier");
+                ui.label(tr("Dossier"));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut form.directory)
                             .desired_width(240.0)
-                            .hint_text("(dossier du programme)"),
+                            .hint_text(tr("(dossier du programme)")),
                     );
-                    if ui.button("…").on_hover_text("Choisir le dossier").clicked() {
+                    if ui
+                        .button("…")
+                        .on_hover_text(tr("Choisir le dossier"))
+                        .clicked()
+                    {
                         actions.push(Action::Browse(Browse::WorkingDir));
                     }
                 });
@@ -1296,17 +1387,19 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
             }
         });
     if !form.is_group() {
-        ui.weak("Les chemins sur le même lecteur sont enregistrés en relatif.");
+        ui.weak(tr(
+            "Les chemins sur le même lecteur sont enregistrés en relatif.",
+        ));
     }
     if let Some(e) = &form.error {
         ui.colored_label(ui.visuals().error_fg_color, e);
     }
     ui.add_space(12.0);
     ui.horizontal(|ui| {
-        if ui.button("Enregistrer").clicked() {
+        if ui.button(tr("Enregistrer")).clicked() {
             submit = true;
         }
-        if ui.button("Annuler").clicked() {
+        if ui.button(tr("Annuler")).clicked() {
             actions.push(Action::CloseDialog);
         }
     });
@@ -1340,7 +1433,7 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
             changed |= ui
                 .add(
                     egui::TextEdit::singleline(&mut note.title)
-                        .hint_text("Titre")
+                        .hint_text(tr("Titre"))
                         .font(egui::TextStyle::Heading)
                         .desired_width(f32::INFINITY),
                 )
@@ -1348,7 +1441,7 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
             changed |= ui
                 .add(
                     egui::TextEdit::multiline(&mut note.text)
-                        .hint_text("Texte de la note")
+                        .hint_text(tr("Texte de la note"))
                         .desired_rows(2)
                         .desired_width(f32::INFINITY),
                 )
@@ -1366,17 +1459,17 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                         egui::Stroke::new(stroke_w, ink),
                         egui::StrokeKind::Inside,
                     );
-                    if resp.on_hover_text("Couleur").clicked() && note.color != c {
+                    if resp.on_hover_text(tr("Couleur")).clicked() && note.color != c {
                         note.color = c;
                         changed = true;
                     }
                 }
                 ui.add_space(8.0);
-                ui.label("Alarme");
+                ui.label(tr("Alarme"));
                 let valid = notes::parse_input(&note.alarm_input).is_some()
                     || note.alarm_input.trim().is_empty();
                 let mut edit = egui::TextEdit::singleline(&mut note.alarm_input)
-                    .hint_text("AAAA/MM/JJ HH:MM")
+                    .hint_text(tr("AAAA/MM/JJ HH:MM"))
                     .desired_width(120.0);
                 if !valid {
                     edit = edit.text_color(egui::Color32::from_rgb(180, 0, 0));
@@ -1399,7 +1492,7 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                         });
                     changed |= note.repeat != before;
                 }
-                if ui.small_button("Supprimer").clicked() {
+                if ui.small_button(tr("Supprimer")).clicked() {
                     delete = true;
                 }
             });
@@ -1418,46 +1511,123 @@ fn darken(c: egui::Color32) -> egui::Color32 {
 }
 
 fn settings_ui(ui: &mut egui::Ui, form: &mut SettingsForm, actions: &mut Vec<Action>) {
-    ui.heading("Réglages");
+    ui.heading(tr("Réglages"));
     ui.add_space(8.0);
+    refresh_preview(ui.ctx(), form);
+    let preview = form.preview.as_ref().map(|(_, t)| t.clone());
     let s = &mut form.settings;
     egui::Grid::new("settings")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            ui.label("Raccourci global");
+            ui.label(egui::RichText::new(tr("Apparence")).strong());
+            ui.end_row();
+
+            ui.label(tr("Langue"));
+            egui::ComboBox::from_id_salt("language")
+                .selected_text(s.language.label())
+                .show_ui(ui, |ui| {
+                    for l in Language::ALL {
+                        ui.selectable_value(&mut s.language, l, l.label());
+                    }
+                });
+            ui.end_row();
+
+            ui.label(tr("Thème"));
+            ui.horizontal(|ui| {
+                for t in Theme::ALL {
+                    ui.selectable_value(&mut s.theme, t, t.label());
+                }
+            });
+            ui.end_row();
+
+            ui.label(tr("Taille du texte"));
+            ui.add(
+                egui::DragValue::new(&mut s.text_size)
+                    .range(settings::TEXT_SIZE_RANGE)
+                    .speed(1.0)
+                    .suffix(" %"),
+            );
+            ui.end_row();
+
+            ui.label(tr("Icône"));
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    if let Some(tex) = &preview {
+                        ui.add(icon_image(tex, 32.0));
+                    }
+                    let custom = s.icon_file.is_some();
+                    ui.add_enabled_ui(!custom, |ui| {
+                        egui::ComboBox::from_id_salt("icon_shape")
+                            .selected_text(s.icon_shape.label())
+                            .width(90.0)
+                            .show_ui(ui, |ui| {
+                                for shape in IconShape::ALL {
+                                    ui.selectable_value(&mut s.icon_shape, shape, shape.label());
+                                }
+                            });
+                        for c in IconColor::ALL {
+                            if color_swatch(ui, c, s.icon_color == c).clicked() {
+                                s.icon_color = c;
+                            }
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(tr("Fichier…"))
+                        .on_hover_text(tr("Icône d'un fichier .ico ou .exe"))
+                        .clicked()
+                    {
+                        actions.push(Action::Browse(Browse::IconFile));
+                    }
+                    if let Some(f) = s.icon_file.clone() {
+                        ui.add(egui::Label::new(egui::RichText::new(&f).weak()).truncate());
+                        if ui.small_button(tr("Retirer")).clicked() {
+                            s.icon_file = None;
+                        }
+                    }
+                });
+            });
+            ui.end_row();
+
+            ui.separator();
+            ui.separator();
+            ui.end_row();
+
+            ui.label(tr("Raccourci global"));
             let mut hk = s.hotkey.clone().unwrap_or_default();
             let valid = hk.trim().is_empty() || hk.parse::<global_hotkey::hotkey::HotKey>().is_ok();
             let mut edit = egui::TextEdit::singleline(&mut hk)
-                .hint_text("désactivé")
+                .hint_text(tr("désactivé"))
                 .desired_width(180.0);
             if !valid {
                 edit = edit.text_color(ui.visuals().error_fg_color);
             }
             if ui
                 .add(edit)
-                .on_hover_text("Ex. Ctrl+Shift+Space, Ctrl+Alt+P")
+                .on_hover_text(tr("Ex. Ctrl+Shift+Space, Ctrl+Alt+P"))
                 .changed()
             {
                 s.hotkey = (!hk.trim().is_empty()).then(|| hk.trim().to_string());
             }
             ui.end_row();
 
-            ui.label("Zone de notification");
+            ui.label(tr("Zone de notification"));
             ui.vertical(|ui| {
-                ui.checkbox(&mut s.tray, "Icône dans la zone de notification");
+                ui.checkbox(&mut s.tray, tr("Icône dans la zone de notification"));
                 ui.add_enabled(
                     s.tray,
-                    egui::Checkbox::new(&mut s.close_to_tray, "La croix masque la fenêtre"),
+                    egui::Checkbox::new(&mut s.close_to_tray, tr("La croix masque la fenêtre")),
                 );
                 ui.add_enabled(
                     s.tray,
-                    egui::Checkbox::new(&mut s.start_hidden, "Démarrer masqué"),
+                    egui::Checkbox::new(&mut s.start_hidden, tr("Démarrer masqué")),
                 );
             });
             ui.end_row();
 
-            ui.label("Coin actif");
+            ui.label(tr("Coin actif"));
             ui.vertical(|ui| {
                 egui::ComboBox::from_id_salt("corner")
                     .selected_text(s.hot_corner.label())
@@ -1473,13 +1643,13 @@ fn settings_ui(ui: &mut egui::Ui, form: &mut SettingsForm, actions: &mut Vec<Act
                                 .range(0..=3000)
                                 .suffix(" ms"),
                         );
-                        ui.label("délai");
+                        ui.label(tr("délai"));
                         ui.add(
                             egui::DragValue::new(&mut s.hot_corner_size)
                                 .range(1..=100)
                                 .suffix(" px"),
                         );
-                        ui.label("taille du coin");
+                        ui.label(tr("taille du coin"));
                     });
                 });
             });
@@ -1488,22 +1658,63 @@ fn settings_ui(ui: &mut egui::Ui, form: &mut SettingsForm, actions: &mut Vec<Act
             ui.label("Windows");
             ui.add_enabled(
                 cfg!(windows),
-                egui::Checkbox::new(&mut form.autostart, "Démarrer avec Windows"),
+                egui::Checkbox::new(&mut form.autostart, tr("Démarrer avec Windows")),
             );
             ui.end_row();
         });
     ui.add_space(6.0);
-    ui.weak("Le raccourci global et l'icône de notification s'appliquent au prochain démarrage.");
-    ui.weak(format!("Fichier : {}", settings::FILE_NAME));
+    ui.weak(tr(
+        "Le raccourci global et l'icône de notification s'activent au prochain démarrage.",
+    ));
+    ui.weak(trf("Fichier : {}", &[&settings::FILE_NAME]));
     ui.add_space(12.0);
     ui.horizontal(|ui| {
-        if ui.button("Enregistrer").clicked() {
+        if ui.button(tr("Enregistrer")).clicked() {
             actions.push(Action::SaveSettings);
         }
-        if ui.button("Annuler").clicked() {
+        if ui.button(tr("Annuler")).clicked() {
             actions.push(Action::CloseDialog);
         }
     });
+}
+
+/// Thème et taille du texte.
+fn apply_appearance(ctx: &egui::Context, s: &Settings) {
+    ctx.set_theme(match s.theme {
+        Theme::System => egui::ThemePreference::System,
+        Theme::Light => egui::ThemePreference::Light,
+        Theme::Dark => egui::ThemePreference::Dark,
+    });
+    ctx.set_zoom_factor(s.text_size as f32 / 100.0);
+}
+
+/// Recalcule l'aperçu de l'icône quand les réglages changent.
+fn refresh_preview(ctx: &egui::Context, form: &mut SettingsForm) {
+    let s = &form.settings;
+    let key: IconKey = (s.icon_shape, s.icon_color, s.icon_file.clone());
+    if form.preview.as_ref().is_some_and(|(k, _)| *k == key) {
+        return;
+    }
+    let img = s.icon(form.settings_path.as_deref());
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [img.width as usize, img.height as usize],
+        &img.rgba,
+    );
+    let tex = ctx.load_texture("icon-preview", image, egui::TextureOptions::LINEAR);
+    form.preview = Some((key, tex));
+}
+
+/// Pastille de couleur cliquable.
+fn color_swatch(ui: &mut egui::Ui, color: IconColor, selected: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+    let ([r, g, b], _) = color.gradient();
+    let painter = ui.painter();
+    painter.rect_filled(rect.shrink(2.0), 4.0, egui::Color32::from_rgb(r, g, b));
+    if selected || resp.hovered() {
+        let stroke = egui::Stroke::new(2.0, ui.visuals().strong_text_color());
+        painter.rect_stroke(rect, 5.0, stroke, egui::StrokeKind::Inside);
+    }
+    resp.on_hover_text(color.label())
 }
 
 fn matches(e: &config::FlatEntry, query: &str) -> bool {
@@ -1595,20 +1806,20 @@ impl Rows<'_> {
             actions.push(Action::Select(path.to_vec()));
         }
         header.context_menu(|ui| {
-            if ui.button("Nouveau raccourci ici…").clicked() {
+            if ui.button(tr("Nouveau raccourci ici…")).clicked() {
                 actions.push(Action::NewEntry(Some(path.to_vec())));
                 ui.close();
             }
-            if ui.button("Nouveau groupe ici…").clicked() {
+            if ui.button(tr("Nouveau groupe ici…")).clicked() {
                 actions.push(Action::NewGroup(Some(path.to_vec())));
                 ui.close();
             }
             ui.separator();
-            if ui.button("Renommer…").clicked() {
+            if ui.button(tr("Renommer…")).clicked() {
                 actions.push(Action::Edit(path.to_vec()));
                 ui.close();
             }
-            if ui.button("Supprimer…").clicked() {
+            if ui.button(tr("Supprimer…")).clicked() {
                 actions.push(Action::AskDelete(path.to_vec()));
                 ui.close();
             }
@@ -1754,7 +1965,7 @@ impl Rows<'_> {
                 resp.dnd_set_drag_payload(DragItem(path.to_vec()));
             }
             if missing {
-                resp = resp.on_hover_text("Cible introuvable");
+                resp = resp.on_hover_text(tr("Cible introuvable"));
             }
             if let Some(info) = info {
                 if !info.is_empty() {
@@ -1767,20 +1978,20 @@ impl Rows<'_> {
                 actions.push(Action::Select(path.to_vec()));
             }
             resp.context_menu(|ui| {
-                if ui.button("Lancer").clicked() {
+                if ui.button(tr("Lancer")).clicked() {
                     actions.push(Action::Launch(path.to_vec()));
                     ui.close();
                 }
-                if ui.button("Ouvrir l'emplacement").clicked() {
+                if ui.button(tr("Ouvrir l'emplacement")).clicked() {
                     actions.push(Action::Reveal(path.to_vec()));
                     ui.close();
                 }
                 ui.separator();
-                if ui.button("Modifier…").clicked() {
+                if ui.button(tr("Modifier…")).clicked() {
                     actions.push(Action::Edit(path.to_vec()));
                     ui.close();
                 }
-                if ui.button("Supprimer…").clicked() {
+                if ui.button(tr("Supprimer…")).clicked() {
                     actions.push(Action::AskDelete(path.to_vec()));
                     ui.close();
                 }
@@ -1802,18 +2013,18 @@ impl Rows<'_> {
                 actions.push(launch());
             }
             resp.context_menu(|ui| {
-                if ui.button("Lancer").clicked() {
+                if ui.button(tr("Lancer")).clicked() {
                     actions.push(launch());
                     ui.close();
                 }
-                if ui.button("Ajouter à PStart").clicked() {
+                if ui.button(tr("Ajouter à PStart")).clicked() {
                     actions.push(Action::AddExternal {
                         name: item.name.clone(),
                         path: item.path.clone(),
                     });
                     ui.close();
                 }
-                if ui.button("Ouvrir l'emplacement").clicked() {
+                if ui.button(tr("Ouvrir l'emplacement")).clicked() {
                     actions.push(Action::RevealPath(item.path.clone()));
                     ui.close();
                 }

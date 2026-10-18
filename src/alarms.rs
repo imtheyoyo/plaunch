@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::i18n::{tr, trf};
 use crate::notes::{Note, INPUT_FORMAT};
 use crate::state::Shared;
 
@@ -47,7 +48,7 @@ fn check(shared: &Shared) {
     };
     for (note, next) in fired {
         let title = display_title(&note);
-        shared.set_status(format!("Rappel : {title}"));
+        shared.set_status(trf("Rappel : {}", &[&title]));
         notify(&note, next);
     }
 }
@@ -62,7 +63,7 @@ fn display_title(note: &Note) -> String {
         .next()
         .map(str::trim)
         .filter(|l| !l.is_empty())
-        .unwrap_or("Note")
+        .unwrap_or(tr("Note"))
         .to_string()
 }
 
@@ -74,10 +75,10 @@ fn notify(note: &Note, next: Option<String>) {
         body.push_str(note.text.trim());
     }
     if let Some(n) = next {
-        body.push_str(&format!("\n\nProchain rappel : {n}"));
+        body.push_str(&format!("\n\n{}", trf("Prochain rappel : {}", &[&n])));
     }
     // Une boîte par rappel, dans son propre thread : elle ne bloque rien.
-    std::thread::spawn(move || imp::message_box("PStart-rs · Rappel", &body));
+    std::thread::spawn(move || imp::message_box(tr("PStart-rs · Rappel"), &body));
 }
 
 #[cfg(windows)]

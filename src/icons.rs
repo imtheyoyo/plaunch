@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use crate::i18n::tr;
 use crate::state::Shared;
 
 /// Image RGBA (alpha non prémultiplié).
@@ -60,43 +61,172 @@ impl IconImage {
     }
 }
 
-/// Icône de l'application : carré arrondi bleu et triangle « lecture ».
-pub fn app_icon() -> IconImage {
+/// Forme dessinée sur l'icône de l'application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IconShape {
+    #[default]
+    Play,
+    Star,
+    Grid,
+    Bolt,
+}
+
+impl IconShape {
+    pub const ALL: [IconShape; 4] = [
+        IconShape::Play,
+        IconShape::Star,
+        IconShape::Grid,
+        IconShape::Bolt,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            IconShape::Play => "play",
+            IconShape::Star => "star",
+            IconShape::Grid => "grid",
+            IconShape::Bolt => "bolt",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            IconShape::Play => tr("Lecture"),
+            IconShape::Star => tr("Étoile"),
+            IconShape::Grid => tr("Grille"),
+            IconShape::Bolt => tr("Éclair"),
+        }
+    }
+
+    pub fn from_key(s: &str) -> IconShape {
+        IconShape::ALL
+            .into_iter()
+            .find(|c| c.key().eq_ignore_ascii_case(s.trim()))
+            .unwrap_or_default()
+    }
+
+    /// Le point (coordonnées sur 32 px) appartient-il au motif ?
+    fn contains(self, x: f32, y: f32) -> bool {
+        match self {
+            IconShape::Play => in_triangle(x, y, (12.0, 8.5), (12.0, 23.5), (24.0, 16.0)),
+            IconShape::Star => in_polygon(x, y, &star_points()),
+            IconShape::Grid => {
+                let cell =
+                    |x0: f32, y0: f32| in_rounded_rect(x, y, x0, y0, x0 + 7.0, y0 + 7.0, 1.5);
+                cell(8.0, 8.0) || cell(17.0, 8.0) || cell(8.0, 17.0) || cell(17.0, 17.0)
+            }
+            IconShape::Bolt => in_polygon(
+                x,
+                y,
+                &[
+                    (18.5, 5.0),
+                    (9.0, 18.0),
+                    (15.0, 18.0),
+                    (13.0, 27.0),
+                    (23.0, 13.5),
+                    (17.0, 13.5),
+                ],
+            ),
+        }
+    }
+}
+
+/// Couleur de fond de l'icône (dégradé vertical).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IconColor {
+    #[default]
+    Blue,
+    Green,
+    Orange,
+    Purple,
+    Red,
+    Gray,
+}
+
+impl IconColor {
+    pub const ALL: [IconColor; 6] = [
+        IconColor::Blue,
+        IconColor::Green,
+        IconColor::Orange,
+        IconColor::Purple,
+        IconColor::Red,
+        IconColor::Gray,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            IconColor::Blue => "blue",
+            IconColor::Green => "green",
+            IconColor::Orange => "orange",
+            IconColor::Purple => "purple",
+            IconColor::Red => "red",
+            IconColor::Gray => "gray",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            IconColor::Blue => tr("Bleu"),
+            IconColor::Green => tr("Vert"),
+            IconColor::Orange => tr("Orange"),
+            IconColor::Purple => tr("Violet"),
+            IconColor::Red => tr("Rouge"),
+            IconColor::Gray => tr("Gris"),
+        }
+    }
+
+    pub fn from_key(s: &str) -> IconColor {
+        IconColor::ALL
+            .into_iter()
+            .find(|c| c.key().eq_ignore_ascii_case(s.trim()))
+            .unwrap_or_default()
+    }
+
+    /// Couleurs haut et bas du dégradé.
+    pub fn gradient(self) -> ([u8; 3], [u8; 3]) {
+        match self {
+            IconColor::Blue => ([59, 130, 246], [29, 78, 216]),
+            IconColor::Green => ([34, 197, 94], [21, 128, 61]),
+            IconColor::Orange => ([249, 115, 22], [194, 65, 12]),
+            IconColor::Purple => ([168, 85, 247], [109, 40, 217]),
+            IconColor::Red => ([239, 68, 68], [185, 28, 28]),
+            IconColor::Gray => ([107, 114, 128], [55, 65, 81]),
+        }
+    }
+}
+
+/// Icône de l'application : carré arrondi en dégradé et motif blanc.
+pub fn app_icon(shape: IconShape, color: IconColor) -> IconImage {
     const S: u32 = 32;
     let mut rgba = vec![0u8; (S * S * 4) as usize];
     let radius = 7.0f32;
+    let (top, bottom) = color.gradient();
     for y in 0..S {
         for x in 0..S {
             // Suréchantillonnage 4×4 pour l'anticrénelage.
             let mut cover_box = 0.0f32;
-            let mut cover_tri = 0.0f32;
+            let mut cover_fg = 0.0f32;
             for sy in 0..4 {
                 for sx in 0..4 {
                     let px = x as f32 + (sx as f32 + 0.5) / 4.0;
                     let py = y as f32 + (sy as f32 + 0.5) / 4.0;
                     if in_rounded_rect(px, py, 1.0, 1.0, 31.0, 31.0, radius) {
                         cover_box += 1.0 / 16.0;
-                        if in_triangle(px, py, (12.0, 8.5), (12.0, 23.5), (24.0, 16.0)) {
-                            cover_tri += 1.0 / 16.0;
+                        if shape.contains(px, py) {
+                            cover_fg += 1.0 / 16.0;
                         }
                     }
                 }
             }
             let t = y as f32 / S as f32;
-            // Dégradé vertical #3B82F6 → #1D4ED8.
-            let bg = [
-                lerp(59.0, 29.0, t),
-                lerp(130.0, 78.0, t),
-                lerp(246.0, 216.0, t),
-            ];
             let mix = if cover_box > 0.0 {
-                cover_tri / cover_box
+                cover_fg / cover_box
             } else {
                 0.0
             };
             let i = ((y * S + x) * 4) as usize;
             for c in 0..3 {
-                rgba[i + c] = (bg[c] * (1.0 - mix) + 255.0 * mix).round() as u8;
+                let bg = lerp(top[c] as f32, bottom[c] as f32, t);
+                rgba[i + c] = (bg * (1.0 - mix) + 255.0 * mix).round() as u8;
             }
             rgba[i + 3] = (cover_box * 255.0).round() as u8;
         }
@@ -106,6 +236,43 @@ pub fn app_icon() -> IconImage {
         height: S,
         rgba,
     }
+}
+
+/// Icône choisie dans les réglages : fichier personnalisé (.ico, .exe…)
+/// s'il est lisible, sinon l'icône dessinée.
+pub fn custom_icon(shape: IconShape, color: IconColor, file: Option<&str>) -> IconImage {
+    if let Some(f) = file.filter(|f| !f.trim().is_empty()) {
+        imp::init_thread();
+        if let Some(img) = imp::extract_file(f) {
+            return img;
+        }
+    }
+    app_icon(shape, color)
+}
+
+fn star_points() -> [(f32, f32); 10] {
+    let mut pts = [(0.0, 0.0); 10];
+    for (i, p) in pts.iter_mut().enumerate() {
+        let r = if i % 2 == 0 { 10.5 } else { 4.6 };
+        let a = std::f32::consts::PI * (i as f32 / 5.0) - std::f32::consts::FRAC_PI_2;
+        *p = (16.0 + r * a.cos(), 16.8 + r * a.sin());
+    }
+    pts
+}
+
+/// Test pair-impair de l'appartenance à un polygone.
+fn in_polygon(x: f32, y: f32, pts: &[(f32, f32)]) -> bool {
+    let mut inside = false;
+    let mut j = pts.len() - 1;
+    for i in 0..pts.len() {
+        let (xi, yi) = pts[i];
+        let (xj, yj) = pts[j];
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
@@ -196,6 +363,11 @@ mod imp {
             }
         }
         query(target, true)
+    }
+
+    /// Icône d'un fichier local, sans icône générique de repli.
+    pub fn extract_file(target: &str) -> Option<IconImage> {
+        query(target, false)
     }
 
     fn query(target: &str, generic: bool) -> Option<IconImage> {
@@ -333,6 +505,10 @@ mod imp {
     pub fn extract(_target: &str) -> Option<IconImage> {
         None
     }
+
+    pub fn extract_file(_target: &str) -> Option<IconImage> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -341,7 +517,7 @@ mod tests {
 
     #[test]
     fn app_icon_shape() {
-        let icon = app_icon();
+        let icon = app_icon(IconShape::Play, IconColor::Blue);
         assert_eq!(icon.rgba.len(), 32 * 32 * 4);
         // Coin transparent, centre opaque et blanc (triangle).
         assert_eq!(icon.rgba[3], 0);
@@ -351,8 +527,30 @@ mod tests {
     }
 
     #[test]
+    fn every_shape_draws_something() {
+        for shape in IconShape::ALL {
+            assert_eq!(IconShape::from_key(shape.key()), shape);
+            let icon = app_icon(shape, IconColor::Green);
+            let white = icon
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| p[0] > 240 && p[1] > 240 && p[2] > 240 && p[3] == 255)
+                .count();
+            assert!(white > 60, "{shape:?} : {white} pixels blancs");
+            // Le fond garde la couleur choisie.
+            assert!(icon.rgba[(16 * 32 + 3) * 4 + 1] > icon.rgba[(16 * 32 + 3) * 4]);
+        }
+        for color in IconColor::ALL {
+            assert_eq!(IconColor::from_key(color.key()), color);
+        }
+        assert_eq!(IconShape::from_key("?"), IconShape::Play);
+    }
+
+    #[test]
     fn downscale_halves() {
-        let icon = app_icon().downscale(16);
+        let icon = app_icon(IconShape::Play, IconColor::Blue).downscale(16);
         assert_eq!((icon.width, icon.height), (16, 16));
         assert_eq!(icon.rgba.len(), 16 * 16 * 4);
     }

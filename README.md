@@ -55,6 +55,14 @@ vous gardez votre arborescence de raccourcis telle quelle.
   dans `HKCU\…\Run`, distincte de celle de PStart. Chemin absolu : réactivez
   l'option si la clé USB change de lettre.
 - **Fenêtre de réglages** (bouton ⚙).
+- **Langue** : français ou anglais (automatique selon Windows par défaut),
+  changement à chaud, menu de l'icône compris.
+- **Thème** clair, sombre ou celui du système, et **taille du texte** réglable
+  (70 à 200 %).
+- **Icône personnalisable** : forme (lecture, étoile, grille, éclair) et
+  couleur au choix, ou icône prise dans un fichier `.ico` / `.exe` (chemin
+  relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
+  de notification sans redémarrer.
 
 ## Réglages
 
@@ -70,9 +78,17 @@ start_hidden=false        ; démarrer directement dans la zone de notification
 hot_corner=none           ; topleft, topright, bottomleft, bottomright, top, bottom, left, right
 hot_corner_delay=300      ; temps de présence dans la zone (ms)
 hot_corner_size=8         ; taille des coins (pixels)
+language=auto             ; auto, fr, en
+theme=system              ; system, light, dark
+text_size=100             ; pourcentage (70-200)
+icon_shape=play           ; play, star, grid, bolt
+icon_color=blue           ; blue, green, orange, purple, red, gray
+icon_file=                ; ex. _Icones\pstart.ico (prioritaire sur forme/couleur)
 ```
 
-Relancez PStart-rs (menu de l'icône → « Quitter PStart-rs ») après modification.
+Depuis la fenêtre ⚙, tout s'applique immédiatement, sauf le raccourci global
+et l'activation de l'icône de notification (au prochain démarrage). Après
+une modification directe du fichier, relancez PStart-rs.
 
 ## Utilisation
 
@@ -127,6 +143,7 @@ cargo test -- --ignored
 | `alarms.rs` | Déclenchement des rappels |
 | `hotcorner.rs` | Coin ou bord actif |
 | `autostart.rs` | Démarrage avec Windows (registre) |
+| `i18n.rs` | Traductions (le texte français sert de clé, anglais en table) |
 | `app.rs` | Interface egui |
 
 ## Feuille de route
@@ -136,6 +153,7 @@ cargo test -- --ignored
 - ~~**v0.3** : édition (ajout, renommage, déplacement, glisser-déposer),
   recherche dans le menu Démarrer.~~ ✔
 - ~~**v0.4** : capteurs de bords d'écran, notes et alarmes, démarrage avec Windows.~~ ✔
+- ~~**v0.5** : langue, thème, taille du texte et icône personnalisable.~~ ✔
 
 ## Licence
 

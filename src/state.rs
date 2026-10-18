@@ -9,6 +9,7 @@ use eframe::egui;
 
 use crate::config::{self, Config};
 use crate::hotcorner::Corner;
+use crate::i18n::trf;
 use crate::icons::IconImage;
 use crate::launcher;
 use crate::notes::Notes;
@@ -73,11 +74,14 @@ impl Shared {
                         config::record_run(el, &now);
                     }
                     match cfg.save() {
-                        Ok(()) => format!("Lancé : {name}"),
-                        Err(e) => format!("Lancé : {name} (statistiques non enregistrées : {e})"),
+                        Ok(()) => trf("Lancé : {}", &[&name]),
+                        Err(e) => trf(
+                            "Lancé : {} (statistiques non enregistrées : {})",
+                            &[&name, &e],
+                        ),
                     }
                 }
-                Err(e) => format!("Échec : {e}"),
+                Err(e) => trf("Échec : {}", &[&e]),
             }
         };
         self.set_status(msg);
@@ -98,7 +102,7 @@ impl Shared {
                 Some(r)
             }
             Err(e) => {
-                self.set_status(format!("Modification impossible : {e}"));
+                self.set_status(trf("Modification impossible : {}", &[&e]));
                 None
             }
         }
@@ -108,8 +112,8 @@ impl Shared {
     pub fn launch_external(&self, name: &str, path: &str) {
         let workdir = crate::paths::parent(path);
         match launcher::launch(path, workdir.as_deref()) {
-            Ok(()) => self.set_status(format!("Lancé : {name}")),
-            Err(e) => self.set_status(format!("Échec : {e}")),
+            Ok(()) => self.set_status(trf("Lancé : {}", &[&name])),
+            Err(e) => self.set_status(trf("Échec : {}", &[&e])),
         }
     }
 

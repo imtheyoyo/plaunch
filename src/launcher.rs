@@ -63,17 +63,17 @@ mod imp {
 
     fn describe(code: isize) -> String {
         match code {
-            0 => "mémoire insuffisante".into(),
-            2 => "fichier introuvable".into(),
-            3 => "chemin introuvable".into(),
-            5 => "accès refusé".into(),
-            8 => "mémoire insuffisante".into(),
-            11 => "exécutable invalide".into(),
-            26 => "violation de partage".into(),
-            27 => "association de fichier incomplète".into(),
-            31 => "aucune application associée à ce type de fichier".into(),
-            32 => "DLL introuvable".into(),
-            c => format!("échec du lancement (code {c})"),
+            0 => crate::i18n::tr("mémoire insuffisante").into(),
+            2 => crate::i18n::tr("fichier introuvable").into(),
+            3 => crate::i18n::tr("chemin introuvable").into(),
+            5 => crate::i18n::tr("accès refusé").into(),
+            8 => crate::i18n::tr("mémoire insuffisante").into(),
+            11 => crate::i18n::tr("exécutable invalide").into(),
+            26 => crate::i18n::tr("violation de partage").into(),
+            27 => crate::i18n::tr("association de fichier incomplète").into(),
+            31 => crate::i18n::tr("aucune application associée à ce type de fichier").into(),
+            32 => crate::i18n::tr("DLL introuvable").into(),
+            c => crate::i18n::trf("échec du lancement (code {})", &[&c]),
         }
     }
 }

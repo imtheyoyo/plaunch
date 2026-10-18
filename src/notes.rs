@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Duration, NaiveDateTime};
 
+use crate::i18n::tr;
 use crate::xml::{self, Element};
 
 pub const FILE_NAME: &str = "pstart-rs-notes.xml";
@@ -26,9 +27,9 @@ impl Repeat {
 
     pub fn label(self) -> &'static str {
         match self {
-            Repeat::Once => "une fois",
-            Repeat::Daily => "chaque jour",
-            Repeat::Weekly => "chaque semaine",
+            Repeat::Once => tr("une fois"),
+            Repeat::Daily => tr("chaque jour"),
+            Repeat::Weekly => tr("chaque semaine"),
         }
     }
 

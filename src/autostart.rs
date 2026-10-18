@@ -47,7 +47,7 @@ mod imp {
         if r == ERROR_SUCCESS {
             Ok(hkey)
         } else {
-            Err(format!("registre inaccessible (code {r})"))
+            Err(crate::i18n::trf("registre inaccessible (code {})", &[&r]))
         }
     }
 
@@ -89,7 +89,10 @@ mod imp {
         if r == ERROR_SUCCESS {
             Ok(())
         } else {
-            Err(format!("écriture du registre impossible (code {r})"))
+            Err(crate::i18n::trf(
+                "écriture du registre impossible (code {})",
+                &[&r],
+            ))
         }
     }
 
@@ -111,7 +114,7 @@ mod imp {
         false
     }
     pub fn enable(_name: &str, _command: &str) -> Result<(), String> {
-        Err("disponible sous Windows uniquement".into())
+        Err(crate::i18n::tr("disponible sous Windows uniquement").into())
     }
     pub fn disable(_name: &str) -> Result<(), String> {
         Ok(())

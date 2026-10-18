@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::i18n::tr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     CurrentUser,
@@ -12,8 +14,8 @@ pub enum Source {
 impl Source {
     pub fn label(self) -> &'static str {
         match self {
-            Source::CurrentUser => "Menu Démarrer (utilisateur)",
-            Source::AllUsers => "Menu Démarrer (tous)",
+            Source::CurrentUser => tr("Menu Démarrer (utilisateur)"),
+            Source::AllUsers => tr("Menu Démarrer (tous)"),
         }
     }
 }
