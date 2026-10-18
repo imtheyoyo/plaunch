@@ -139,6 +139,33 @@ pub fn expand_env(s: &str) -> String {
     out
 }
 
+/// Exprime `target` relativement au dossier `base` quand ils sont sur le
+/// même lecteur (c'est ce qui rend une clé USB portable quelle que soit sa
+/// lettre). Sinon, renvoie le chemin absolu tel quel.
+pub fn make_relative(target: &str, base: &str) -> String {
+    let target = normalize(&target.replace('/', "\\"));
+    let base = normalize(&base.replace('/', "\\"));
+    let same_drive =
+        has_drive(&target) && has_drive(&base) && target[..2].eq_ignore_ascii_case(&base[..2]);
+    if !same_drive {
+        return target;
+    }
+    let t: Vec<&str> = target[2..].split('\\').filter(|s| !s.is_empty()).collect();
+    let b: Vec<&str> = base[2..].split('\\').filter(|s| !s.is_empty()).collect();
+    let common = t
+        .iter()
+        .zip(&b)
+        .take_while(|(x, y)| x.to_lowercase() == y.to_lowercase())
+        .count();
+    let mut parts: Vec<&str> = std::iter::repeat_n("..", b.len() - common).collect();
+    parts.extend(&t[common..]);
+    if parts.is_empty() {
+        ".".to_string()
+    } else {
+        parts.join("\\")
+    }
+}
+
 /// Convertit un chemin Windows en chemin natif de la plateforme courante.
 pub fn to_native(p: &str) -> std::path::PathBuf {
     if cfg!(windows) {
@@ -206,6 +233,29 @@ mod tests {
         );
         assert_eq!(parent("F:\\a\\b.exe").as_deref(), Some("F:\\a"));
         assert_eq!(parent("F:\\b.exe").as_deref(), Some("F:\\"));
+    }
+
+    #[test]
+    fn relative_paths() {
+        assert_eq!(
+            make_relative("F:\\_Appli Portables\\_HD\\x.exe", BASE),
+            "_HD\\x.exe"
+        );
+        assert_eq!(
+            make_relative("f:\\PortableApps\\q\\q.exe", BASE),
+            "..\\PortableApps\\q\\q.exe"
+        );
+        assert_eq!(
+            make_relative("C:\\Program Files\\x.exe", BASE),
+            "C:\\Program Files\\x.exe"
+        );
+        assert_eq!(
+            make_relative("\\\\NAS\\p\\x.exe", BASE),
+            "\\\\NAS\\p\\x.exe"
+        );
+        // Aller-retour avec resolve().
+        let rel = make_relative("F:\\Outils\\Vid\u{e9}o\\v.exe", BASE);
+        assert_eq!(resolve(&rel, BASE), "F:\\Outils\\Vid\u{e9}o\\v.exe");
     }
 
     #[test]

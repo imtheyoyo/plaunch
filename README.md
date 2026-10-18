@@ -34,6 +34,16 @@ vous gardez votre arborescence de raccourcis telle quelle.
 - **Raccourci clavier global** pour afficher/masquer la fenêtre
   (`Ctrl+Shift+Space` par défaut).
 - **Instance unique** : relancer `pstart-rs.exe` réaffiche la fenêtre ouverte.
+- **Édition** : nouveau raccourci ou groupe (bouton `＋`, menus contextuels),
+  modification (`F2`) avec sélecteur de fichier, suppression (`Suppr`, avec
+  confirmation). Les chemins sur le même lecteur que PStart-rs sont
+  enregistrés en **relatif**, pour rester portables.
+- **Glisser-déposer** : réorganisez raccourcis et groupes dans l'arbre
+  (en haut d'un groupe = avant lui, ailleurs = dedans) ; déposez des fichiers
+  depuis l'Explorateur pour les ajouter.
+- **Recherche dans le menu Démarrer** (utilisateur et tous les utilisateurs),
+  selon les options `<search>` de PStart et ses couleurs ; clic droit sur un
+  résultat → « Ajouter à PStart ».
 
 ## Réglages
 
@@ -87,6 +97,8 @@ cargo test -- --ignored
 |---|---|
 | `xml.rs` | Arbre XML générique, lecture via `quick-xml`, écriture au format PStart |
 | `config.rs` | Chargement/enregistrement, accès aux entrées, statistiques, options |
+| `edit.rs` | Ajout, modification, suppression et déplacement dans l'arborescence |
+| `startmenu.rs` | Raccourcis du menu Démarrer pour la recherche |
 | `paths.rs` | Résolution des chemins à la manière de PStart |
 | `launcher.rs` | Lancement via `ShellExecuteW` (Windows) |
 | `state.rs` | État partagé entre l'interface, l'icône de notification et le raccourci |
@@ -102,8 +114,8 @@ cargo test -- --ignored
 
 - ~~**v0.2** : icônes des programmes, icône de notification avec menu en cascade,
   raccourci clavier global, instance unique.~~ ✔
-- **v0.3** : édition (ajout, renommage, déplacement, glisser-déposer),
-  recherche dans le menu Démarrer.
+- ~~**v0.3** : édition (ajout, renommage, déplacement, glisser-déposer),
+  recherche dans le menu Démarrer.~~ ✔
 - **v0.4** : capteurs de bords d'écran, notes et alarmes, démarrage avec Windows.
 
 ## Licence

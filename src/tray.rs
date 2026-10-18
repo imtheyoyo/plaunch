@@ -23,6 +23,7 @@ pub struct Tray {
     icon: TrayIcon,
     built_icons: u64,
     built_generation: u64,
+    built_structure: u64,
 }
 
 impl Tray {
@@ -42,6 +43,7 @@ impl Tray {
             icon: tray,
             built_icons: shared.icons_version.load(Ordering::SeqCst),
             built_generation: shared.generation.load(Ordering::SeqCst),
+            built_structure: shared.structure_version.load(Ordering::SeqCst),
         })
     }
 
@@ -50,10 +52,15 @@ impl Tray {
     pub fn refresh(&mut self, shared: &Shared) {
         let icons = shared.icons_version.load(Ordering::SeqCst);
         let generation = shared.generation.load(Ordering::SeqCst);
-        if icons != self.built_icons || generation != self.built_generation {
+        let structure = shared.structure_version.load(Ordering::SeqCst);
+        if icons != self.built_icons
+            || generation != self.built_generation
+            || structure != self.built_structure
+        {
             self.icon.set_menu(Some(Box::new(build_menu(shared))));
             self.built_icons = icons;
             self.built_generation = generation;
+            self.built_structure = structure;
         }
     }
 }

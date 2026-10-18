@@ -10,6 +10,7 @@ use eframe::egui;
 use crate::config::{self, Config};
 use crate::icons::IconImage;
 use crate::launcher;
+use crate::startmenu::StartItem;
 
 #[derive(Default)]
 pub struct Shared {
@@ -21,6 +22,10 @@ pub struct Shared {
     pub icons_version: AtomicU64,
     /// Incrémenté à chaque (re)chargement du fichier.
     pub generation: AtomicU64,
+    /// Incrémenté à chaque modification de l'arborescence.
+    pub structure_version: AtomicU64,
+    /// Raccourcis du menu Démarrer (pour la recherche).
+    pub start_menu: Mutex<Vec<StartItem>>,
     /// Fermeture définitive demandée (menu « Quitter »).
     pub quitting: AtomicBool,
     /// Donner le focus à la recherche au prochain affichage.
@@ -68,6 +73,36 @@ impl Shared {
             }
         };
         self.set_status(msg);
+    }
+
+    /// Applique une modification à la configuration puis l'enregistre.
+    /// En cas d'erreur, rien n'est enregistré et le message est affiché.
+    pub fn modify<R>(&self, f: impl FnOnce(&mut Config) -> Result<R, String>) -> Option<R> {
+        let result = {
+            let mut guard = self.config.lock().unwrap();
+            let cfg = guard.as_mut()?;
+            f(cfg).and_then(|r| cfg.save().map(|()| r))
+        };
+        match result {
+            Ok(r) => {
+                self.structure_version.fetch_add(1, Ordering::SeqCst);
+                self.repaint();
+                Some(r)
+            }
+            Err(e) => {
+                self.set_status(format!("Modification impossible : {e}"));
+                None
+            }
+        }
+    }
+
+    /// Lance un fichier externe (résultat du menu Démarrer), sans statistiques.
+    pub fn launch_external(&self, name: &str, path: &str) {
+        let workdir = crate::paths::parent(path);
+        match launcher::launch(path, workdir.as_deref()) {
+            Ok(()) => self.set_status(format!("Lancé : {name}")),
+            Err(e) => self.set_status(format!("Échec : {e}")),
+        }
     }
 
     pub fn next_generation(&self) -> u64 {

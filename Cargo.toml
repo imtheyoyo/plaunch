@@ -1,6 +1,6 @@
 [package]
 name = "pstart-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Lanceur portable pour clé USB, compatible avec les fichiers PStart.xml"
 license = "MIT"
@@ -14,6 +14,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 tray-icon = "0.26"
 global-hotkey = "0.9"
 raw-window-handle = "0.6"
+rfd = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

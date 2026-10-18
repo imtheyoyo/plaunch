@@ -3,12 +3,14 @@
 
 mod app;
 mod config;
+mod edit;
 mod hotkey;
 mod icons;
 mod instance;
 mod launcher;
 mod paths;
 mod settings;
+mod startmenu;
 mod state;
 mod tray;
 mod window;

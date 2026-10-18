@@ -189,6 +189,51 @@ impl Config {
         let h = self.number(&["window", "main", "size", "y"])?;
         (w > 100 && h > 100).then_some([w as f32, h as f32])
     }
+
+    /// Options de recherche de PStart (`<search>`).
+    pub fn search_options(&self) -> SearchOptions {
+        let color = |name: &str| {
+            self.root
+                .get(&["search", "colors", name])
+                .and_then(|e| parse_color(&e.text))
+        };
+        SearchOptions {
+            pstart: self.flag(&["search", "pstart"]).unwrap_or(true),
+            current_user: self
+                .flag(&["search", "currentuserstartmenu"])
+                .unwrap_or(true),
+            all_users: self.flag(&["search", "allusersstartmenu"]).unwrap_or(true),
+            colorize: self.flag(&["search", "colorize"]).unwrap_or(true),
+            color_pstart: color("pstart"),
+            color_current_user: color("currentuserstartmenu"),
+            color_all_users: color("allusersstartmenu"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchOptions {
+    pub pstart: bool,
+    pub current_user: bool,
+    pub all_users: bool,
+    pub colorize: bool,
+    pub color_pstart: Option<[u8; 3]>,
+    pub color_current_user: Option<[u8; 3]>,
+    pub color_all_users: Option<[u8; 3]>,
+}
+
+/// Couleur Delphi `BBGGRRh` (ex. `0080FFh`) → RVB.
+pub fn parse_color(text: &str) -> Option<[u8; 3]> {
+    let hex = text.trim().trim_end_matches(['h', 'H']);
+    if hex.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(hex, 16).ok()?;
+    Some([
+        (v & 0xFF) as u8,
+        ((v >> 8) & 0xFF) as u8,
+        ((v >> 16) & 0xFF) as u8,
+    ])
 }
 
 /// Nom affiché d'un groupe ou d'une entrée (attribut `name`, espaces retirés).
@@ -342,6 +387,17 @@ mod tests {
         let cfg = Config::from_str(SAMPLE, "E:\\Portable").unwrap();
         assert!(!cfg.single_click());
         assert_eq!(cfg.window_size(), Some([451.0, 823.0]));
+    }
+
+    #[test]
+    fn colors_are_bgr() {
+        // 0080FFh en Delphi = rouge FF, vert 80, bleu 00 (orange).
+        assert_eq!(parse_color("0080FFh"), Some([0xFF, 0x80, 0x00]));
+        assert_eq!(parse_color("40A000h"), Some([0x00, 0xA0, 0x40]));
+        assert_eq!(parse_color("xyz"), None);
+        let cfg = Config::from_str(SAMPLE, "E:\\Portable").unwrap();
+        let s = cfg.search_options();
+        assert!(s.pstart && s.current_user && s.all_users);
     }
 
     #[test]
