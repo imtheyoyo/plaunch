@@ -14,7 +14,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -22,7 +22,15 @@ jobs:
       - name: Tests
         run: cargo test --locked
       - name: Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
+        shell: pwsh
+        run: |
+          # Les diagnostics sont aussi publiés en annotations, lisibles sans ouvrir le journal.
+          $out = cargo clippy --locked --all-targets --message-format=short -- -D warnings 2>&1 | ForEach-Object { "$_" }
+          $code = $LASTEXITCODE
+          $out | Write-Output
+          $out | Where-Object { $_ -match '(error|warning)' -and $_ -notmatch '^\s*(Compiling|Checking)' } |
+            Select-Object -First 20 | ForEach-Object { Write-Output "::error::$_" }
+          exit $code
       - name: Build release
         run: cargo build --locked --release
       - uses: actions/upload-artifact@v4
