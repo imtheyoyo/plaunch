@@ -33,7 +33,7 @@ jobs:
           exit $code
       - name: Build release
         run: cargo build --locked --release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pstart-rs-windows-x64
           path: target/release/pstart-rs.exe
