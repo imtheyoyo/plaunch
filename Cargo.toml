@@ -1,6 +1,6 @@
 [package]
 name = "pstart-rs"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 description = "Lanceur portable pour clé USB, compatible avec les fichiers PStart.xml"
 license = "MIT"

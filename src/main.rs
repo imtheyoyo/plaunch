@@ -16,6 +16,7 @@ mod icons;
 mod instance;
 mod launcher;
 mod log;
+mod monitor;
 mod notes;
 mod paths;
 mod scan;
@@ -24,6 +25,7 @@ mod startmenu;
 mod state;
 mod tray;
 mod update;
+mod usage;
 mod window;
 mod xml;
 

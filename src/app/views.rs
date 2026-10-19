@@ -199,7 +199,17 @@ impl PStartApp {
             return actions;
         };
         self.visible.borrow_mut().clear();
+        let running: HashSet<String> = self
+            .shared
+            .running
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
         let rows = Rows {
+            multi: &self.multi,
+            running: &running,
             selected: &self.selected,
             exists: &self.exists,
             textures: &self.textures,
@@ -383,6 +393,10 @@ impl PStartApp {
         let Some(cfg) = cfg else {
             return actions;
         };
+        if self.multi.len() > 1 {
+            self.multi_details(ui, cfg, &mut actions);
+            return actions;
+        }
         let Some(sel) = &self.selected else {
             ui.weak(tr("Sélectionnez un raccourci."));
             ui.add_space(16.0);
@@ -485,6 +499,19 @@ impl PStartApp {
                 ui.label(tr("Dernier"));
                 ui.label(el.child_text("rundate").unwrap_or(tr("jamais")));
                 ui.end_row();
+                let used = self
+                    .shared
+                    .usage
+                    .lock()
+                    .unwrap()
+                    .get(&crate::usage::key(config::entry_path(el)))
+                    .copied()
+                    .unwrap_or(0);
+                if used > 0 {
+                    ui.label(tr("Utilisation"));
+                    ui.label(crate::usage::format_duration(used));
+                    ui.end_row();
+                }
             });
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
@@ -512,6 +539,60 @@ impl PStartApp {
         actions
     }
 
+    /// Panneau de la sélection multiple : actions groupées.
+    fn multi_details(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
+        let paths = self.multi.clone();
+        ui.heading(trf("{} éléments sélectionnés", &[&paths.len()]));
+        egui::ScrollArea::vertical()
+            .max_height(160.0)
+            .show(ui, |ui| {
+                for p in &paths {
+                    if let Some(el) = cfg.item(p) {
+                        let mark = if el.name == "files" { "📁" } else { "•" };
+                        ui.weak(format!("{mark} {}", config::display_name(el)));
+                    }
+                }
+            });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(tr("▶ Tout lancer")).clicked() {
+                actions.push(Action::LaunchMany(paths.clone()));
+            }
+            if ui.button(tr("☆ Ajouter aux favoris")).clicked() {
+                actions.push(Action::PinMany(paths.clone(), true));
+            }
+            if ui.button(tr("★ Retirer des favoris")).clicked() {
+                actions.push(Action::PinMany(paths.clone(), false));
+            }
+        });
+        ui.add_space(6.0);
+        ui.label(tr("Déplacer vers"));
+        egui::ComboBox::from_id_salt("move-many")
+            .selected_text(tr("Choisir un groupe…"))
+            .width(ui.available_width().min(240.0))
+            .show_ui(ui, |ui| {
+                for (target, label) in group_choices(cfg) {
+                    if ui.selectable_label(false, label).clicked() {
+                        actions.push(Action::MoveMany {
+                            paths: paths.clone(),
+                            target,
+                        });
+                    }
+                }
+            });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(tr("Supprimer…")).clicked() {
+                actions.push(Action::AskDeleteMany(paths.clone()));
+            }
+            if ui.button(tr("Désélectionner")).clicked() {
+                actions.push(Action::ClearMulti);
+            }
+        });
+        ui.add_space(8.0);
+        ui.weak(tr("Ctrl+clic : ajouter ou retirer, Maj+clic : plage"));
+    }
+
     pub(super) fn shortcuts_help(&self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(tr("Raccourcis")).strong());
         ui.weak(tr("Entrée : lancer"));
@@ -521,6 +602,7 @@ impl PStartApp {
         ui.weak(tr("Flèches : naviguer, ouvrir ou fermer un groupe"));
         ui.weak(tr("Ctrl+1 à 9 : lancer un favori"));
         ui.weak(tr("Ctrl+Z / Ctrl+Y : annuler / rétablir"));
+        ui.weak(tr("Ctrl+clic, Maj+clic : sélection multiple"));
         match &self.hotkey_info {
             Some(hk) => ui.weak(trf("{} : afficher / masquer", &[&hk])),
             None => ui.weak(tr("Raccourci global : désactivé")),

@@ -50,7 +50,14 @@ pub fn cleanup_helper() {
     let _ = std::fs::remove_file(std::env::temp_dir().join(HELPER_EXE));
 }
 
-pub use imp::{can_eject, close_gracefully, eject, kill, processes_on, run_helper};
+pub use imp::{
+    activate, all_processes, can_eject, close_gracefully, eject, kill, processes_on, run_helper,
+};
+
+/// Chemin d'exécutable normalisé pour comparer (minuscules, `\`).
+pub fn path_key(p: &str) -> String {
+    p.trim().replace('/', "\\").to_lowercase()
+}
 
 #[cfg(windows)]
 mod imp {
@@ -78,8 +85,10 @@ mod imp {
     };
     use windows_sys::Win32::System::IO::DeviceIoControl;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, MessageBoxW, PostMessageW,
-        MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, WM_CLOSE,
+        EnumWindows, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, MessageBoxW, PostMessageW, SetForegroundWindow, ShowWindow, GW_OWNER,
+        MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, SW_RESTORE,
+        WM_CLOSE,
     };
 
     use super::{on_drive, Proc};
@@ -121,6 +130,16 @@ mod imp {
 
     /// Processus dont l'exécutable est sur le lecteur (sauf PStart-rs).
     pub fn processes_on(drive: char) -> Vec<Proc> {
+        let mut out: Vec<Proc> = all_processes()
+            .into_iter()
+            .filter(|p| on_drive(&p.path, drive))
+            .collect();
+        out.sort_by_key(|p| p.name().to_lowercase());
+        out
+    }
+
+    /// Tous les processus lisibles (sauf PStart-rs), avec leur exécutable.
+    pub fn all_processes() -> Vec<Proc> {
         let mut pids = vec![0u32; 4096];
         let mut needed = 0u32;
         // SAFETY : tampon de taille indiquée en octets.
@@ -130,14 +149,43 @@ mod imp {
         }
         pids.truncate(needed as usize / 4);
         let me = std::process::id();
-        let mut out: Vec<Proc> = pids
-            .into_iter()
+        pids.into_iter()
             .filter(|&p| p != 0 && p != me)
             .filter_map(|pid| image_path(pid).map(|path| Proc { pid, path }))
-            .filter(|p| on_drive(&p.path, drive))
-            .collect();
-        out.sort_by_key(|p| p.name().to_lowercase());
-        out
+            .collect()
+    }
+
+    unsafe extern "system" fn find_window(hwnd: HWND, lparam: LPARAM) -> i32 {
+        let state = &mut *(lparam as *mut (Vec<u32>, HWND));
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if state.0.contains(&pid)
+            && IsWindowVisible(hwnd) != 0
+            && GetWindow(hwnd, GW_OWNER).is_null()
+            && GetWindowTextLengthW(hwnd) > 0
+        {
+            state.1 = hwnd;
+            return 0; // trouvé : arrêt de l'énumération
+        }
+        1
+    }
+
+    /// Met au premier plan la fenêtre principale d'un de ces processus.
+    pub fn activate(pids: &[u32]) -> bool {
+        let mut state: (Vec<u32>, HWND) = (pids.to_vec(), std::ptr::null_mut());
+        // SAFETY : `state` vit pendant l'appel synchrone d'EnumWindows ; le
+        // handle trouvé est utilisé aussitôt.
+        unsafe {
+            EnumWindows(Some(find_window), &mut state as *mut _ as LPARAM);
+            let w = state.1;
+            if w.is_null() {
+                return false;
+            }
+            if IsIconic(w) != 0 {
+                ShowWindow(w, SW_RESTORE);
+            }
+            SetForegroundWindow(w) != 0
+        }
     }
 
     unsafe extern "system" fn close_window(hwnd: HWND, lparam: LPARAM) -> i32 {
@@ -394,6 +442,29 @@ mod imp {
     }
     pub fn processes_on(_drive: char) -> Vec<Proc> {
         Vec::new()
+    }
+    /// Linux : lecture de /proc (utile pour les essais).
+    pub fn all_processes() -> Vec<Proc> {
+        let me = std::process::id();
+        let Ok(dir) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        dir.flatten()
+            .filter_map(|e| {
+                let pid: u32 = e.file_name().to_str()?.parse().ok()?;
+                if pid == me {
+                    return None;
+                }
+                let exe = std::fs::read_link(e.path().join("exe")).ok()?;
+                Some(Proc {
+                    pid,
+                    path: exe.to_string_lossy().into_owned(),
+                })
+            })
+            .collect()
+    }
+    pub fn activate(_pids: &[u32]) -> bool {
+        false
     }
     pub fn close_gracefully(_pids: &[u32]) {}
     pub fn kill(_pids: &[u32]) {}

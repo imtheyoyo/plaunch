@@ -85,6 +85,35 @@ impl PStartApp {
                         }
                     });
                 }
+                Dialog::ConfirmDeleteMany(paths) => {
+                    ui.heading(tr("Supprimer"));
+                    ui.add_space(8.0);
+                    let entries: usize = cfg
+                        .map(|c| {
+                            paths
+                                .iter()
+                                .filter_map(|p| c.item(p))
+                                .map(edit::count_entries)
+                                .sum()
+                        })
+                        .unwrap_or(0);
+                    ui.label(trf(
+                        "Supprimer les {} éléments sélectionnés ({} raccourcis) ?",
+                        &[&paths.len(), &entries],
+                    ));
+                    ui.weak(tr(
+                        "Les programmes eux-mêmes ne sont pas supprimés (Ctrl+Z pour annuler).",
+                    ));
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(tr("Supprimer")).clicked() {
+                            actions.push(Action::Cleanup(paths.clone()));
+                        }
+                        if ui.button(tr("Annuler")).clicked() {
+                            actions.push(Action::CloseDialog);
+                        }
+                    });
+                }
                 Dialog::ConfirmLaunchGroup { path, name, count } => {
                     ui.heading(tr("Lancer le groupe"));
                     ui.add_space(8.0);
@@ -610,6 +639,16 @@ pub(super) fn settings_ui(
             });
             ui.end_row();
 
+            ui.label(tr("Programmes ouverts"));
+            ui.vertical(|ui| {
+                ui.checkbox(
+                    &mut s.reuse_running,
+                    tr("Ramener la fenêtre d'un programme déjà ouvert"),
+                );
+                ui.checkbox(&mut s.track_usage, tr("Mesurer le temps d'utilisation"));
+            });
+            ui.end_row();
+
             ui.label(tr("Rappels"));
             egui::ComboBox::from_id_salt("reminders")
                 .selected_text(s.reminders.label())
@@ -722,6 +761,17 @@ pub(super) fn settings_ui(
             ui.label(tr("Mises à jour"));
             ui.vertical(|ui| {
                 ui.checkbox(&mut s.check_updates, tr("Vérifier au démarrage"));
+                if let Some(prev) = update::previous_version() {
+                    if ui
+                        .button(trf("↩ Revenir à la version {}", &[&prev]))
+                        .on_hover_text(tr(
+                            "Remet l'exécutable précédent en place et redémarre (réversible)",
+                        ))
+                        .clicked()
+                    {
+                        actions.push(Action::Rollback);
+                    }
+                }
                 ui.horizontal_wrapped(|ui| {
                     ui.weak(trf("Version {}", &[&update::current_version()]));
                     match upd {

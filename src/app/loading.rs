@@ -117,6 +117,9 @@ impl PStartApp {
                     }
                 });
                 *self.shared.notes.lock().unwrap() = Some(notes);
+                *self.shared.usage.lock().unwrap() =
+                    crate::usage::load(&crate::usage::path_for(&cfg.file));
+                self.multi.clear();
                 *self.shared.config.lock().unwrap() = Some(cfg);
                 // Les icônes du menu Démarrer sont recalculées avec le reste.
                 targets.extend(
@@ -310,6 +313,12 @@ impl PStartApp {
             new.hot_corner_all_screens,
         );
         *self.shared.reminders.lock().unwrap() = new.reminders;
+        self.shared
+            .reuse_running
+            .store(new.reuse_running, Ordering::SeqCst);
+        self.shared
+            .track_usage
+            .store(new.track_usage, Ordering::SeqCst);
         if form.autostart != autostart::is_enabled() {
             let file = self
                 .shared

@@ -12,6 +12,28 @@ pub(super) struct Rows<'a> {
     pub(super) visible: &'a RefCell<Vec<ItemPath>>,
     pub(super) open: &'a HashSet<String>,
     pub(super) scroll_to: bool,
+    /// Sélection multiple.
+    pub(super) multi: &'a [ItemPath],
+    /// Exécutables ouverts (clés `eject::path_key`).
+    pub(super) running: &'a HashSet<String>,
+}
+
+/// Clic simple, Ctrl+clic ou Maj+clic sur une ligne.
+fn click_action(ui: &egui::Ui, path: &[usize]) -> Action {
+    let m = ui.input(|i| i.modifiers);
+    if m.command {
+        Action::SelectMulti {
+            path: path.to_vec(),
+            range: false,
+        }
+    } else if m.shift {
+        Action::SelectMulti {
+            path: path.to_vec(),
+            range: true,
+        }
+    } else {
+        Action::Select(path.to_vec())
+    }
 }
 
 /// Clé d'un groupe : la suite des noms depuis la racine.
@@ -129,7 +151,7 @@ impl Rows<'_> {
     ) {
         header.dnd_set_drag_payload(DragItem(path.to_vec()));
         if header.clicked() {
-            actions.push(Action::Select(path.to_vec()));
+            actions.push(click_action(ui, path));
         }
         header.context_menu(|ui| {
             if ui.button(tr("▶ Tout lancer")).clicked() {
@@ -310,7 +332,9 @@ impl Rows<'_> {
         actions: &mut Vec<Action>,
     ) -> egui::Response {
         let missing = self.exists.get(target) == Some(&false);
-        let is_selected = self.selected.as_deref() == Some(path);
+        let is_selected =
+            self.selected.as_deref() == Some(path) || self.multi.iter().any(|p| p == path);
+        let running = self.running.contains(&crate::eject::path_key(target));
         let mut text = egui::RichText::new(name);
         if missing {
             text = text.color(ui.visuals().weak_text_color()).strikethrough();
@@ -318,6 +342,10 @@ impl Rows<'_> {
         ui.horizontal(|ui| {
             self.icon(ui, target);
             let mut resp = ui.selectable_label(is_selected, text);
+            if running {
+                ui.colored_label(egui::Color32::from_rgb(46, 170, 90), "●")
+                    .on_hover_text(tr("En cours d'exécution"));
+            }
             if draggable {
                 resp = resp.interact(egui::Sense::drag());
                 resp.dnd_set_drag_payload(DragItem(path.to_vec()));
@@ -336,14 +364,19 @@ impl Rows<'_> {
                     ui.weak(info);
                 }
             }
-            if resp.double_clicked() || (self.single && resp.clicked()) {
+            let plain = ui.input(|i| !i.modifiers.command && !i.modifiers.shift);
+            if resp.double_clicked() || (self.single && resp.clicked() && plain) {
                 actions.push(Action::Launch(path.to_vec()));
             } else if resp.clicked() {
-                actions.push(Action::Select(path.to_vec()));
+                actions.push(click_action(ui, path));
             }
             resp.context_menu(|ui| {
                 if ui.button(tr("Lancer")).clicked() {
                     actions.push(Action::Launch(path.to_vec()));
+                    ui.close();
+                }
+                if running && ui.button(tr("Lancer une autre instance")).clicked() {
+                    actions.push(Action::LaunchNew(path.to_vec()));
                     ui.close();
                 }
                 if ui.button(tr("Ouvrir l'emplacement")).clicked() {
@@ -362,6 +395,10 @@ impl Rows<'_> {
                 ui.separator();
                 if ui.button(tr("Modifier…")).clicked() {
                     actions.push(Action::Edit(path.to_vec()));
+                    ui.close();
+                }
+                if ui.button(tr("Dupliquer")).clicked() {
+                    actions.push(Action::Duplicate(path.to_vec()));
                     ui.close();
                 }
                 if ui.button(tr("Supprimer…")).clicked() {

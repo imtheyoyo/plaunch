@@ -52,6 +52,14 @@ pub struct Shared {
     pub file_changed: AtomicBool,
     /// Éjection demandée depuis le menu de l'icône.
     pub ask_eject: AtomicBool,
+    /// Programmes ouverts : exécutable (clé `eject::path_key`) → processus.
+    pub running: Mutex<HashMap<String, Vec<u32>>>,
+    /// Temps d'utilisation (secondes) par chemin de raccourci.
+    pub usage: Mutex<HashMap<String, u64>>,
+    pub usage_dirty: AtomicBool,
+    /// Ramener la fenêtre d'un programme déjà ouvert au lieu de le relancer.
+    pub reuse_running: AtomicBool,
+    pub track_usage: AtomicBool,
     /// Raccourcis clavier globaux des raccourcis : identifiant → position.
     pub entry_hotkeys: Mutex<HashMap<u32, Vec<usize>>>,
 }
@@ -81,6 +89,29 @@ impl Shared {
     /// Lance l'entrée située à `path`, met à jour ses statistiques et
     /// enregistre le fichier.
     pub fn launch(&self, path: &[usize]) {
+        self.launch_mode(path, false);
+    }
+
+    /// Lance l'entrée ; si elle tourne déjà (et sauf `force_new`), ramène
+    /// sa fenêtre au premier plan.
+    pub fn launch_mode(&self, path: &[usize], force_new: bool) {
+        if !force_new && self.reuse_running.load(Ordering::SeqCst) {
+            let found = {
+                let guard = self.config.lock().unwrap();
+                guard.as_ref().and_then(|cfg| {
+                    let el = cfg.item(path).filter(|e| e.name == "file")?;
+                    let target = crate::eject::path_key(&cfg.resolve(el));
+                    let pids = self.running.lock().unwrap().get(&target).cloned()?;
+                    Some((config::display_name(el).to_string(), pids))
+                })
+            };
+            if let Some((name, pids)) = found {
+                if crate::eject::activate(&pids) {
+                    self.set_status(trf("Déjà ouvert : {}", &[&name]));
+                    return;
+                }
+            }
+        }
         let msg = {
             let mut guard = self.config.lock().unwrap();
             let Some(cfg) = guard.as_mut() else { return };

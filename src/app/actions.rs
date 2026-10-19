@@ -5,7 +5,79 @@ use super::*;
 impl PStartApp {
     pub(super) fn apply(&mut self, action: Action) {
         match action {
-            Action::Select(p) => self.selected = Some(p),
+            Action::Select(p) => {
+                self.multi.clear();
+                self.selected = Some(p);
+            }
+            Action::SelectMulti { path, range } => self.select_multi(path, range),
+            Action::ClearMulti => self.multi.clear(),
+            Action::LaunchNew(p) => {
+                self.selected = Some(p.clone());
+                self.shared.launch_mode(&p, true);
+            }
+            Action::Duplicate(p) => {
+                if let Some(copy) = self.shared.modify(|c| edit::duplicate(c, &p)) {
+                    self.reveal(&copy);
+                    self.shared.set_status(tr("Raccourci dupliqué"));
+                }
+            }
+            Action::LaunchMany(paths) => {
+                let entries: Vec<ItemPath> = {
+                    let guard = self.shared.config.lock().unwrap();
+                    let Some(cfg) = guard.as_ref() else { return };
+                    paths
+                        .into_iter()
+                        .filter(|p| cfg.item(p).is_some_and(|e| e.name == "file"))
+                        .collect()
+                };
+                for p in &entries {
+                    self.shared.launch(p);
+                }
+                self.shared
+                    .set_status(trf("{} programmes lancés", &[&entries.len()]));
+            }
+            Action::PinMany(paths, on) => {
+                if let Some(n) = self.shared.modify(|c| edit::set_favorites(c, &paths, on)) {
+                    self.shared.set_status(if on {
+                        trf("{} raccourcis ajoutés aux favoris", &[&n])
+                    } else {
+                        trf("{} raccourcis retirés des favoris", &[&n])
+                    });
+                }
+            }
+            Action::MoveMany { paths, target } => {
+                if let Some(n) = self.shared.modify(|c| edit::move_many(c, paths, &target)) {
+                    self.multi.clear();
+                    self.reveal(&target);
+                    let place = {
+                        let guard = self.shared.config.lock().unwrap();
+                        guard
+                            .as_ref()
+                            .map(|c| group_label(c, &target))
+                            .unwrap_or_default()
+                    };
+                    self.shared
+                        .set_status(trf("{} éléments déplacés dans « {} »", &[&n, &place]));
+                }
+            }
+            Action::AskDeleteMany(paths) => {
+                if !paths.is_empty() {
+                    self.dialog = Some(Dialog::ConfirmDeleteMany(paths));
+                }
+            }
+            Action::Rollback => match update::rollback() {
+                Ok(v) => {
+                    self.shared
+                        .set_status(trf("Retour à la version {} : redémarrage…", &[&v]));
+                    self.flush_notes();
+                    crate::monitor::save_usage(&self.shared);
+                    match update::relaunch() {
+                        Ok(()) => tray::quit(&self.shared),
+                        Err(e) => self.shared.error(e),
+                    }
+                }
+                Err(e) => self.shared.error(e),
+            },
             Action::Launch(p) => {
                 self.selected = Some(p.clone());
                 self.shared.launch(&p);
@@ -163,6 +235,7 @@ impl PStartApp {
                 self.dialog = None;
                 if let Some(n) = self.shared.modify(|c| edit::delete_many(c, paths)) {
                     self.selected = None;
+                    self.multi.clear();
                     self.shared
                         .set_status(trf("{} raccourcis supprimés", &[&n]));
                 }
@@ -280,6 +353,35 @@ impl PStartApp {
                 }
             }
         }
+    }
+
+    /// Ctrl+clic : ajoute ou retire ; Maj+clic : toute la plage depuis la
+    /// sélection courante (dans l'ordre affiché).
+    fn select_multi(&mut self, path: ItemPath, range: bool) {
+        if self.multi.is_empty() {
+            if let Some(s) = &self.selected {
+                self.multi.push(s.clone());
+            }
+        }
+        if range {
+            let visible = self.visible.borrow().clone();
+            let anchor = self
+                .selected
+                .as_ref()
+                .and_then(|s| visible.iter().position(|p| p == s));
+            let end = visible.iter().position(|p| *p == path);
+            if let (Some(a), Some(b)) = (anchor, end) {
+                let (a, b) = (a.min(b), a.max(b));
+                self.multi = visible[a..=b].to_vec();
+                return;
+            }
+        }
+        if let Some(i) = self.multi.iter().position(|p| *p == path) {
+            self.multi.remove(i);
+        } else {
+            self.multi.push(path.clone());
+        }
+        self.selected = Some(path);
     }
 
     /// Montre un élément : groupes parents ouverts, sélection, défilement.

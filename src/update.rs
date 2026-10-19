@@ -188,6 +188,11 @@ fn with_suffix(exe: &Path, suffix: &str) -> PathBuf {
 
 /// Écrit `data` à côté de `exe` puis échange les fichiers.
 pub fn replace_exe(exe: &Path, data: &[u8]) -> Result<(), String> {
+    replace_exe_from(exe, data, current_version())
+}
+
+/// Comme `replace_exe`, en notant la version remplacée (retour arrière).
+fn replace_exe_from(exe: &Path, data: &[u8], old_version: &str) -> Result<(), String> {
     let new = with_suffix(exe, ".new");
     let old = with_suffix(exe, ".old");
     let io = |e: std::io::Error| trf("remplacement impossible : {}", &[&e]);
@@ -202,15 +207,62 @@ pub fn replace_exe(exe: &Path, data: &[u8]) -> Result<(), String> {
         let _ = std::fs::rename(&old, exe);
         return Err(io(e));
     }
+    let _ = std::fs::write(with_suffix(exe, ".old.version"), old_version);
     Ok(())
 }
 
-/// Supprime l'ancien exécutable laissé par une mise à jour.
+/// Supprime les restes d'une mise à jour interrompue. L'ancien exécutable
+/// (`.old`) est gardé pour pouvoir revenir en arrière.
 pub fn cleanup() {
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::fs::remove_file(with_suffix(&exe, ".old"));
         let _ = std::fs::remove_file(with_suffix(&exe, ".new"));
+        let _ = std::fs::remove_file(with_suffix(&exe, ".swap"));
     }
+}
+
+/// Version précédente disponible pour un retour arrière.
+pub fn previous_version() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    previous_version_of(&exe)
+}
+
+fn previous_version_of(exe: &Path) -> Option<String> {
+    if !with_suffix(exe, ".old").is_file() {
+        return None;
+    }
+    let v = std::fs::read_to_string(with_suffix(exe, ".old.version")).unwrap_or_default();
+    let v = v.trim();
+    Some(if v.is_empty() {
+        "?".into()
+    } else {
+        v.to_string()
+    })
+}
+
+/// Échange l'exécutable courant et la version précédente (on peut donc
+/// revenir à la version actuelle de la même façon). Relancer ensuite.
+pub fn rollback() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    rollback_of(&exe, current_version())
+}
+
+fn rollback_of(exe: &Path, current: &str) -> Result<String, String> {
+    let old = with_suffix(exe, ".old");
+    let swap = with_suffix(exe, ".swap");
+    let previous =
+        previous_version_of(exe).ok_or_else(|| tr("aucune version précédente").to_string())?;
+    let io = |e: std::io::Error| trf("retour arrière impossible : {}", &[&e]);
+    std::fs::rename(exe, &swap).map_err(io)?;
+    if let Err(e) = std::fs::rename(&old, exe) {
+        let _ = std::fs::rename(&swap, exe);
+        return Err(io(e));
+    }
+    if let Err(e) = std::fs::rename(&swap, &old) {
+        crate::log::error(&format!("retour arrière : {e}"));
+    }
+    let _ = std::fs::write(with_suffix(exe, ".old.version"), current);
+    crate::log::info(&format!("retour de {current} à {previous}"));
+    Ok(previous)
 }
 
 /// Relance l'exécutable (avec les mêmes arguments).
@@ -279,6 +331,25 @@ mod tests {
         assert!(verify(&exe, &good).is_ok());
         assert!(verify(&exe, &sha256_hex(b"autre")).is_err());
         assert!(verify(b"MZ court", &sha256_hex(b"MZ court")).is_err());
+    }
+
+    #[test]
+    fn rollback_swaps_back_and_forth() {
+        let dir = std::env::temp_dir().join(format!("pstart-rb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("pstart-rs.exe");
+        assert!(previous_version_of(&exe).is_none());
+        std::fs::write(&exe, b"v1").unwrap();
+        replace_exe_from(&exe, b"v2", "0.8.1").unwrap();
+        assert_eq!(previous_version_of(&exe).as_deref(), Some("0.8.1"));
+        assert_eq!(rollback_of(&exe, "0.9.0").unwrap(), "0.8.1");
+        assert_eq!(std::fs::read(&exe).unwrap(), b"v1");
+        // Et retour à la version récente.
+        assert_eq!(previous_version_of(&exe).as_deref(), Some("0.9.0"));
+        rollback_of(&exe, "0.8.1").unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"v2");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

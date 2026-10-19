@@ -208,6 +208,72 @@ pub fn find_or_create_group(cfg: &mut Config, name: &str) -> Result<ItemPath, St
     insert(cfg, &[], None, NewItem::Group { name: name.into() })
 }
 
+/// Duplique un raccourci juste après lui (sans statistiques, favori ni
+/// raccourci clavier). Renvoie la position de la copie.
+pub fn duplicate(cfg: &mut Config, path: &[usize]) -> Result<ItemPath, String> {
+    let (&idx, parent) = path.split_last().ok_or("chemin vide")?;
+    let group = node_mut(files_mut(cfg), parent).ok_or(tr("élément introuvable"))?;
+    let original = group.children.get(idx).ok_or(tr("élément introuvable"))?;
+    if original.name != "file" {
+        return Err(tr("seuls les raccourcis peuvent être dupliqués").into());
+    }
+    let mut copy = original.clone();
+    let name = crate::i18n::trf("{} (copie)", &[&crate::config::display_name(original)]);
+    set_name(&mut copy, &name);
+    copy.children.retain(|c| {
+        !matches!(
+            c.name.as_str(),
+            "runcount" | "rundate" | "favorite" | "globalhotkey"
+        )
+    });
+    group.children.insert(idx + 1, copy);
+    let mut p = parent.to_vec();
+    p.push(idx + 1);
+    Ok(p)
+}
+
+/// Déplace plusieurs éléments à la fin du groupe `target`. Les éléments
+/// déjà dans ce groupe, ou qui le contiennent, sont ignorés.
+pub fn move_many(
+    cfg: &mut Config,
+    mut paths: Vec<ItemPath>,
+    target: &[usize],
+) -> Result<usize, String> {
+    group_mut(cfg, target)?;
+    let mut target = target.to_vec();
+    // Du dernier au premier : les positions restantes ne bougent pas.
+    paths.sort();
+    paths.dedup();
+    let mut n = 0;
+    for p in paths.iter().rev() {
+        let Some((&idx, parent)) = p.split_last() else {
+            continue;
+        };
+        if parent == target.as_slice() || target.starts_with(p) {
+            continue;
+        }
+        move_item(cfg, p, &target, usize::MAX)?;
+        // Le retrait décale le groupe cible s'il suivait l'élément.
+        if target.len() > parent.len() && target.starts_with(parent) && target[parent.len()] > idx {
+            target[parent.len()] -= 1;
+        }
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Épingle ou désépingle plusieurs raccourcis.
+pub fn set_favorites(cfg: &mut Config, paths: &[ItemPath], on: bool) -> Result<usize, String> {
+    let mut n = 0;
+    for p in paths {
+        if cfg.item(p).is_some_and(|e| e.name == "file") {
+            set_favorite(cfg, p, on)?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
 /// Fixe l'ordre de la barre des favoris (numéros 1, 2, 3…).
 pub fn reorder_favorites(cfg: &mut Config, order: &[ItemPath]) -> Result<(), String> {
     for (i, p) in order.iter().enumerate() {
@@ -607,6 +673,38 @@ mod tests {
         );
         assert_eq!(crate::config::favorite_value("True"), (true, 0));
         assert_eq!(crate::config::favorite_value("abc"), (false, 0));
+    }
+
+    #[test]
+    fn duplicate_entry() {
+        let mut c = cfg();
+        set_favorite(&mut c, &[0, 0], true).unwrap();
+        let p = duplicate(&mut c, &[0, 0]).unwrap();
+        assert_eq!(p, vec![0, 1]);
+        let el = c.item(&p).unwrap();
+        assert_eq!(display_name(el), "VLC media player (copie)");
+        assert_eq!(el.child_text("path"), Some("Video\\VLC\\vlc.exe"));
+        assert!(el.child("runcount").is_none() && el.child("favorite").is_none());
+        assert!(duplicate(&mut c, &[0]).is_err());
+    }
+
+    #[test]
+    fn move_several() {
+        let mut c = cfg();
+        // VLC et Mes vidéos (Vidéo), Notepad2 (racine) → Vide [3].
+        let n = move_many(&mut c, vec![vec![0, 0], vec![4], vec![0, 2]], &[3]).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(
+            names(&c, &[3]),
+            ["Notepad2", "Mes vidéos", "VLC media player"]
+        );
+        assert_eq!(names(&c, &[0]), ["MPC-HC 64"]);
+        // Groupe déplacé vers un groupe placé après lui.
+        let mut c = cfg();
+        move_many(&mut c, vec![vec![1]], &[3]).unwrap();
+        assert_eq!(names(&c, &[2]), ["Musique"]);
+        // Un groupe ne peut pas aller dans lui-même : ignoré.
+        assert_eq!(move_many(&mut c, vec![vec![2]], &[2]).unwrap(), 0);
     }
 
     #[test]

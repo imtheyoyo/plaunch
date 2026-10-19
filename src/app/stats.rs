@@ -101,6 +101,42 @@ impl PStartApp {
         }
 
         ui.add_space(12.0);
+        ui.label(egui::RichText::new(tr("Temps d'utilisation")).strong());
+        let usage = self.shared.usage.lock().unwrap().clone();
+        let mut timed: Vec<(&FlatEntry, u64)> = entries
+            .iter()
+            .filter_map(|e| {
+                let el = cfg.item(&e.path)?;
+                let secs = *usage.get(&crate::usage::key(config::entry_path(el)))?;
+                (secs > 0).then_some((e, secs))
+            })
+            .collect();
+        timed.sort_by_key(|t| std::cmp::Reverse(t.1));
+        timed.truncate(TOP);
+        if timed.is_empty() {
+            ui.weak(tr(
+                "Pas encore mesuré : le temps des programmes ouverts est compté en continu.",
+            ));
+        } else {
+            let total: u64 = usage.values().sum();
+            ui.weak(trf("Total : {}", &[&crate::usage::format_duration(total)]));
+            let max = timed[0].1 as usize;
+            for (e, secs) in &timed {
+                let resp = bar_row_text(
+                    ui,
+                    &e.name,
+                    *secs as usize,
+                    &crate::usage::format_duration(*secs),
+                    max,
+                    self.textures.get(&e.target),
+                );
+                if resp.clicked() {
+                    actions.push(Action::Select(e.path.clone()));
+                }
+            }
+        }
+
+        ui.add_space(12.0);
         ui.label(egui::RichText::new(tr("Dernier lancement")).strong());
         let rows = [
             (tr("cette semaine"), act.week),
@@ -192,6 +228,18 @@ fn bar_row(
     max: usize,
     icon: Option<&egui::TextureHandle>,
 ) -> egui::Response {
+    bar_row_text(ui, label, value, &value.to_string(), max, icon)
+}
+
+/// Variante dont la valeur affichée est un texte (durée…).
+fn bar_row_text(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: usize,
+    shown: &str,
+    max: usize,
+    icon: Option<&egui::TextureHandle>,
+) -> egui::Response {
     let width = ui.available_width();
     let label_w = (width * 0.42).clamp(90.0, 220.0);
     let h = 20.0;
@@ -243,11 +291,11 @@ fn bar_row(
     painter.text(
         egui::pos2(bar.right() + 6.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
-        value.to_string(),
+        shown,
         font,
         visuals.weak_text_color(),
     );
-    resp.on_hover_text(format!("{label} : {value}"))
+    resp.on_hover_text(format!("{label} : {shown}"))
 }
 
 #[cfg(test)]

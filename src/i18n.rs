@@ -749,6 +749,74 @@ const EN: &[(&str, &str)] = &[
     ("{} (à la fin)", "{} (at the end)"),
     ("⏰ Ajouter une alarme", "⏰ Add an alarm"),
     ("◀ Déplacer à gauche", "◀ Move left"),
+    // v0.9
+    ("Choisir un groupe…", "Choose a group…"),
+    (
+        "Ctrl+clic : ajouter ou retirer, Maj+clic : plage",
+        "Ctrl+click: add or remove, Shift+click: range",
+    ),
+    (
+        "Ctrl+clic, Maj+clic : sélection multiple",
+        "Ctrl+click, Shift+click: multiple selection",
+    ),
+    ("Dupliquer", "Duplicate"),
+    ("Déjà ouvert : {}", "Already running: {}"),
+    ("Déplacer vers", "Move to"),
+    ("Désélectionner", "Deselect"),
+    ("En cours d'exécution", "Running"),
+    ("Lancer une autre instance", "Launch another instance"),
+    (
+        "Les programmes eux-mêmes ne sont pas supprimés (Ctrl+Z pour annuler).",
+        "The programs themselves are not deleted (Ctrl+Z to undo).",
+    ),
+    ("Mesurer le temps d'utilisation", "Measure usage time"),
+    (
+        "Pas encore mesuré : le temps des programmes ouverts est compté en continu.",
+        "Not measured yet: time is counted continuously while programs are open.",
+    ),
+    ("Programmes ouverts", "Running programs"),
+    ("Raccourci dupliqué", "Shortcut duplicated"),
+    (
+        "Ramener la fenêtre d'un programme déjà ouvert",
+        "Bring back the window of a program already running",
+    ),
+    (
+        "Remet l'exécutable précédent en place et redémarre (réversible)",
+        "Puts the previous executable back and restarts (reversible)",
+    ),
+    (
+        "Retour à la version {} : redémarrage…",
+        "Back to version {}: restarting…",
+    ),
+    (
+        "Supprimer les {} éléments sélectionnés ({} raccourcis) ?",
+        "Delete the {} selected items ({} shortcuts)?",
+    ),
+    ("Temps d'utilisation", "Usage time"),
+    ("Total : {}", "Total: {}"),
+    ("Utilisation", "Usage"),
+    ("aucune version précédente", "no previous version"),
+    ("retour arrière impossible : {}", "cannot roll back: {}"),
+    (
+        "seuls les raccourcis peuvent être dupliqués",
+        "only shortcuts can be duplicated",
+    ),
+    ("{} (copie)", "{} (copy)"),
+    ("{} h", "{} h"),
+    ("{} h {}", "{} h {}"),
+    ("{} min", "{} min"),
+    ("{} programmes lancés", "{} programs launched"),
+    (
+        "{} raccourcis ajoutés aux favoris",
+        "{} shortcuts added to favorites",
+    ),
+    (
+        "{} raccourcis retirés des favoris",
+        "{} shortcuts removed from favorites",
+    ),
+    ("{} éléments déplacés dans « {} »", "{} items moved to “{}”"),
+    ("{} éléments sélectionnés", "{} items selected"),
+    ("↩ Revenir à la version {}", "↩ Go back to version {}"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (

@@ -172,6 +172,22 @@ enum Action {
         from: usize,
         to: usize,
     },
+    /// Ctrl+clic (ajoute/retire) ou Maj+clic (plage).
+    SelectMulti {
+        path: ItemPath,
+        range: bool,
+    },
+    ClearMulti,
+    LaunchNew(ItemPath),
+    Duplicate(ItemPath),
+    LaunchMany(Vec<ItemPath>),
+    PinMany(Vec<ItemPath>, bool),
+    MoveMany {
+        paths: Vec<ItemPath>,
+        target: ItemPath,
+    },
+    AskDeleteMany(Vec<ItemPath>),
+    Rollback,
     CreateConfig(PathBuf),
 }
 
@@ -255,6 +271,7 @@ enum Dialog {
         new: String,
     },
     ConfirmCleanup(Vec<ItemPath>),
+    ConfirmDeleteMany(Vec<ItemPath>),
     ConfirmRestore {
         file: PathBuf,
         contents: Vec<String>,
@@ -317,6 +334,8 @@ pub struct PStartApp {
     found_rx: Option<(Receiver<Vec<scan::Found>>, bool)>,
     /// Fichier demandé au lancement (argument), même s'il n'existe pas.
     requested_file: Option<PathBuf>,
+    /// Sélection multiple (Ctrl+clic, Maj+clic).
+    multi: Vec<ItemPath>,
 }
 
 impl PStartApp {
@@ -339,6 +358,12 @@ impl PStartApp {
             settings.hot_corner_all_screens,
         );
         *shared.reminders.lock().unwrap() = settings.reminders;
+        shared
+            .reuse_running
+            .store(settings.reuse_running, Ordering::SeqCst);
+        shared
+            .track_usage
+            .store(settings.track_usage, Ordering::SeqCst);
 
         let (exists_tx, exists_rx) = mpsc::channel();
         let mut app = PStartApp {
@@ -369,6 +394,7 @@ impl PStartApp {
             found: Vec::new(),
             found_rx: None,
             requested_file: file.clone(),
+            multi: Vec::new(),
         };
         if let Some(f) = file.filter(|f| f.exists()) {
             app.open(&f);
@@ -390,6 +416,7 @@ impl PStartApp {
         }
         alarms::spawn(app.shared.clone());
         hotcorner::spawn(app.shared.clone());
+        crate::monitor::spawn(app.shared.clone());
         app
     }
 

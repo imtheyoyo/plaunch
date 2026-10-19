@@ -93,7 +93,11 @@ impl PStartApp {
             }
             self.search.clear();
         }
-        if let Some(sel) = self.selected.clone() {
+        if self.multi.len() > 1 {
+            if delete && !typing {
+                actions.push(Action::AskDeleteMany(self.multi.clone()));
+            }
+        } else if let Some(sel) = self.selected.clone() {
             if f2 {
                 actions.push(Action::Edit(sel.clone()));
             }
@@ -228,6 +232,7 @@ impl PStartApp {
             return;
         }
         self.flush_notes();
+        crate::monitor::save_usage(&self.shared);
         let quitting = self.shared.quitting.load(Ordering::SeqCst);
         if !quitting && self.settings.close_to_tray && self.tray.is_some() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
