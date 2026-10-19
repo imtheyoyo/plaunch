@@ -13,6 +13,9 @@ use crate::xml::{self, Element};
 /// Position d'un élément dans l'arbre, en indices d'enfants depuis `<files>`.
 pub type ItemPath = Vec<usize>;
 
+/// Contenu d'un PStart.xml neuf.
+pub const EMPTY_CONFIG: &str = "<start>\r\n\t<files>\r\n\t</files>\r\n\t<general>\r\n\t\t<singleclick>False</singleclick>\r\n\t</general>\r\n</start>\r\n";
+
 /// Format de date utilisé par PStart dans `<rundate>`.
 pub const DATE_FORMAT: &str = "%Y/%m/%d %H:%M:%S";
 
@@ -197,6 +200,22 @@ pub fn set_entry_options(el: &mut Element, o: &EntryOptions) {
 }
 
 impl Config {
+    /// Crée un fichier PStart.xml vide (format de PStart), sans écraser un
+    /// fichier existant.
+    pub fn create_empty(file: &Path) -> Result<(), String> {
+        if file.exists() {
+            return Err(format!(
+                "{} : {}",
+                file.display(),
+                crate::i18n::tr("le fichier existe déjà")
+            ));
+        }
+        if let Some(dir) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
+            fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+        }
+        fs::write(file, EMPTY_CONFIG).map_err(|e| format!("{} : {e}", file.display()))
+    }
+
     pub fn load(file: &Path) -> Result<Config, String> {
         let bytes = fs::read(file).map_err(|e| format!("{} : {e}", file.display()))?;
         let text = decode(&bytes);
@@ -561,6 +580,22 @@ fn with_suffix(p: &Path, suffix: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_empty_file() {
+        let dir = std::env::temp_dir().join(format!("pstart-new-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let file = dir.join("sous-dossier").join("PStart.xml");
+        Config::create_empty(&file).unwrap();
+        let mut cfg = Config::load(&file).unwrap();
+        assert!(cfg.files().unwrap().children.is_empty());
+        assert!(!cfg.single_click());
+        // Relu puis réécrit à l'identique (format de PStart).
+        cfg.save().unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), EMPTY_CONFIG);
+        assert!(Config::create_empty(&file).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     const SAMPLE: &str = include_str!("../tests/fixtures/PStart.sample.xml");
 

@@ -82,6 +82,8 @@ enum Browse {
     IconFile,
     BackupExport,
     BackupRestore,
+    NewConfig,
+    OpenConfig,
     ScanFolder,
     GroupIcon,
 }
@@ -159,6 +161,7 @@ enum Action {
         from: usize,
         to: usize,
     },
+    CreateConfig(PathBuf),
 }
 
 /// Éjection en cours (fermeture des programmes en tâche de fond).
@@ -301,6 +304,8 @@ pub struct PStartApp {
     found: Vec<scan::Found>,
     /// Résultat d'une recherche en cours, et si elle est silencieuse.
     found_rx: Option<(Receiver<Vec<scan::Found>>, bool)>,
+    /// Fichier demandé au lancement (argument), même s'il n'existe pas.
+    requested_file: Option<PathBuf>,
 }
 
 impl PStartApp {
@@ -352,8 +357,9 @@ impl PStartApp {
             eject_state: Arc::default(),
             found: Vec::new(),
             found_rx: None,
+            requested_file: file.clone(),
         };
-        if let Some(f) = file {
+        if let Some(f) = file.filter(|f| f.exists()) {
             app.open(&f);
             // Pas de relance des programmes « au démarrage » après une mise à jour.
             if std::env::var_os(update::RESTART_ENV).is_none() {
@@ -1131,6 +1137,7 @@ impl PStartApp {
                 };
                 self.shared.modify(|c| edit::reorder_favorites(c, &order));
             }
+            Action::CreateConfig(path) => self.create_config(&path),
             Action::OpenLog => {
                 let path = crate::log::path();
                 if let Err(e) = launcher::launch(&path.to_string_lossy(), None) {
@@ -1510,6 +1517,40 @@ impl PStartApp {
                     }
                 }
             }
+            Browse::NewConfig => {
+                let dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.parent().map(Path::to_path_buf))
+                    .unwrap_or_default();
+                let picked = rfd::FileDialog::new()
+                    .set_title(tr("Créer un nouveau PStart.xml"))
+                    .set_directory(&dir)
+                    .set_file_name("PStart.xml")
+                    .add_filter("PStart", &["xml"])
+                    .save_file();
+                if let Some(p) = picked {
+                    self.create_config(&p);
+                }
+            }
+            Browse::OpenConfig => {
+                let dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.parent().map(Path::to_path_buf))
+                    .unwrap_or_default();
+                let picked = rfd::FileDialog::new()
+                    .set_title(tr("Ouvrir un PStart.xml…"))
+                    .set_directory(&dir)
+                    .add_filter("PStart", &["xml"])
+                    .pick_file();
+                if let Some(p) = picked {
+                    if self.settings_path.is_none() {
+                        let sp = settings::path_for(&p);
+                        self.settings = settings::load(&sp);
+                        self.settings_path = Some(sp);
+                    }
+                    self.open(&p);
+                }
+            }
             Browse::ScanFolder => {
                 let start_dir = self.scan_dir().unwrap_or_else(|| start.clone());
                 let picked = rfd::FileDialog::new()
@@ -1865,7 +1906,7 @@ impl PStartApp {
     fn central(&self, ui: &mut egui::Ui, cfg: Option<&Config>) -> Vec<Action> {
         let mut actions = Vec::new();
         let Some(cfg) = cfg else {
-            self.welcome(ui);
+            self.welcome(ui, &mut actions);
             return actions;
         };
         self.visible.borrow_mut().clear();
@@ -2005,18 +2046,82 @@ impl PStartApp {
         }
     }
 
-    fn welcome(&self, ui: &mut egui::Ui) {
+    fn welcome(&self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
+        let target = self.new_config_path();
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
             ui.heading("PStart-rs");
             ui.add_space(12.0);
-            ui.label(tr("Glissez un fichier PStart.xml sur cette fenêtre,"));
-            ui.label(tr("ou placez pstart-rs.exe à côté de votre PStart.xml."));
+            ui.label(tr("Aucun fichier PStart.xml n'est ouvert."));
             if let Some(e) = &self.load_error {
-                ui.add_space(12.0);
+                ui.add_space(6.0);
                 ui.colored_label(ui.visuals().error_fg_color, e);
             }
+            ui.add_space(16.0);
+            if let Some(path) = &target {
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new(tr("＋ Créer un nouveau PStart.xml")).strong(),
+                    ))
+                    .on_hover_text(path.display().to_string())
+                    .clicked()
+                {
+                    actions.push(Action::CreateConfig(path.clone()));
+                }
+                ui.weak(path.display().to_string());
+                ui.add_space(8.0);
+            }
+            ui.horizontal(|ui| {
+                // Centrage approximatif des deux boutons.
+                ui.add_space((ui.available_width() - 330.0).max(0.0) / 2.0);
+                if ui.button(tr("Créer ailleurs…")).clicked() {
+                    actions.push(Action::Browse(Browse::NewConfig));
+                }
+                if ui.button(tr("Ouvrir un PStart.xml…")).clicked() {
+                    actions.push(Action::Browse(Browse::OpenConfig));
+                }
+            });
+            ui.add_space(16.0);
+            ui.weak(tr(
+                "Vous pouvez aussi glisser un fichier PStart.xml sur cette fenêtre,",
+            ));
+            ui.weak(tr("ou placer pstart-rs.exe à côté de votre PStart.xml."));
         });
+    }
+
+    /// Fichier proposé à la création : celui demandé en argument s'il
+    /// n'existe pas, sinon `PStart.xml` à côté de l'exécutable.
+    fn new_config_path(&self) -> Option<PathBuf> {
+        if let Some(p) = &self.requested_file {
+            if !p.exists() {
+                return Some(p.clone());
+            }
+        }
+        let beside = std::env::current_exe().ok()?.parent()?.join("PStart.xml");
+        (!beside.exists()).then_some(beside)
+    }
+
+    /// Crée un PStart.xml vide, l'ouvre et y rattache les réglages.
+    fn create_config(&mut self, path: &Path) {
+        if let Err(e) = Config::create_empty(path) {
+            self.shared.error(e);
+            return;
+        }
+        crate::log::info(&format!("nouveau fichier créé : {}", path.display()));
+        if self.settings_path.is_none() {
+            let sp = settings::path_for(path);
+            self.settings_path = Some(sp.clone());
+            if sp.exists() {
+                self.settings = settings::load(&sp);
+            } else {
+                self.persist_settings();
+            }
+        }
+        self.requested_file = Some(path.to_path_buf());
+        self.open(path);
+        self.shared.set_status(tr(
+            "Nouveau fichier créé : ajoutez vos programmes avec ＋ ou en les déposant ici",
+        ));
     }
 
     fn details(&self, ui: &mut egui::Ui, cfg: Option<&Config>) -> Vec<Action> {
@@ -2638,6 +2743,7 @@ impl eframe::App for PStartApp {
                 egui::Panel::right("details")
                     .resizable(true)
                     .default_size(250.0)
+                    .min_size(200.0)
                     .show(ui, |ui| {
                         ui.add_space(6.0);
                         actions.extend(self.details(ui, cfg));

@@ -64,6 +64,13 @@ vous gardez votre arborescence de raccourcis telle quelle.
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.8.1
+
+- **Création d'un PStart.xml** : si aucun fichier n'est trouvé au lancement,
+  l'écran d'accueil propose de créer un PStart.xml vide à côté de
+  l'exécutable (ou au chemin passé en argument), de le créer ailleurs, ou
+  d'ouvrir un fichier existant.
+
 ### Nouveautés de la v0.8
 
 - **Éjection de la clé corrigée** (Windows 11) : PStart-rs se ferme et un

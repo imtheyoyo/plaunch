@@ -674,6 +674,30 @@ const EN: &[(&str, &str)] = &[
     ("▶ Tout lancer", "▶ Launch all"),
     ("＋ {} nouveaux programmes", "＋ {} new programs"),
     // v0.8
+    ("le fichier existe déjà", "the file already exists"),
+    (
+        "Aucun fichier PStart.xml n'est ouvert.",
+        "No PStart.xml file is open.",
+    ),
+    (
+        "＋ Créer un nouveau PStart.xml",
+        "＋ Create a new PStart.xml",
+    ),
+    ("Créer ailleurs…", "Create elsewhere…"),
+    ("Ouvrir un PStart.xml…", "Open a PStart.xml…"),
+    (
+        "Vous pouvez aussi glisser un fichier PStart.xml sur cette fenêtre,",
+        "You can also drop a PStart.xml file on this window,",
+    ),
+    (
+        "ou placer pstart-rs.exe à côté de votre PStart.xml.",
+        "or put pstart-rs.exe next to your PStart.xml.",
+    ),
+    ("Créer un nouveau PStart.xml", "Create a new PStart.xml"),
+    (
+        "Nouveau fichier créé : ajoutez vos programmes avec ＋ ou en les déposant ici",
+        "New file created: add your programs with ＋ or by dropping them here",
+    ),
     ("Répéter", "Repeat"),
     ("(aucun) : cliquer pour définir", "(none): click to set"),
     ("(racine)", "(root)"),
