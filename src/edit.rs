@@ -239,7 +239,9 @@ pub fn move_many(
     mut paths: Vec<ItemPath>,
     target: &[usize],
 ) -> Result<usize, String> {
-    group_mut(cfg, target)?;
+    // Insérés tous à l'ancienne fin du groupe, du dernier au premier :
+    // l'ordre d'origine est conservé.
+    let end = group_mut(cfg, target)?.children.len();
     let mut target = target.to_vec();
     // Du dernier au premier : les positions restantes ne bougent pas.
     paths.sort();
@@ -252,7 +254,7 @@ pub fn move_many(
         if parent == target.as_slice() || target.starts_with(p) {
             continue;
         }
-        move_item(cfg, p, &target, usize::MAX)?;
+        move_item(cfg, p, &target, end)?;
         // Le retrait décale le groupe cible s'il suivait l'élément.
         if target.len() > parent.len() && target.starts_with(parent) && target[parent.len()] > idx {
             target[parent.len()] -= 1;
@@ -696,7 +698,7 @@ mod tests {
         assert_eq!(n, 3);
         assert_eq!(
             names(&c, &[3]),
-            ["Notepad2", "Mes vidéos", "VLC media player"]
+            ["VLC media player", "Mes vidéos", "Notepad2"]
         );
         assert_eq!(names(&c, &[0]), ["MPC-HC 64"]);
         // Groupe déplacé vers un groupe placé après lui.

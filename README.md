@@ -64,6 +64,23 @@ vous gardez votre arborescence de raccourcis telle quelle.
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.9
+
+- **Code réorganisé** : l'interface est découpée en modules (`app/loading`,
+  `actions`, `views`, `input`, `dialogs`, `tree`, `stats`, `widgets`).
+- **Retour à la version précédente** : après une mise à jour, l'ancien
+  exécutable est gardé ; Réglages → Mises à jour → « ↩ Revenir à la version… »
+  le remet en place et redémarre (et inversement).
+- **Programmes en cours d'exécution** : un point vert les signale ; lancer un
+  programme déjà ouvert ramène sa fenêtre au premier plan (clic droit →
+  « Lancer une autre instance » pour en ouvrir une seconde). Réglable.
+- **Dupliquer un raccourci** (clic droit → Dupliquer).
+- **Sélection multiple** (`Ctrl+clic`, `Maj+clic`) : lancer, épingler,
+  déplacer vers un groupe ou supprimer plusieurs éléments à la fois.
+- **Temps d'utilisation** par programme, mesuré pendant que PStart-rs tourne
+  (onglet Statistiques et panneau de détails), enregistré dans
+  `pstart-rs-usage.txt`.
+
 ### Nouveautés de la v0.8.1
 
 - **Création d'un PStart.xml** : si aucun fichier n'est trouvé au lancement,
@@ -250,7 +267,8 @@ cargo test -- --ignored
 | `scan.rs` | Détection et import de programmes |
 | `eject.rs` | Éjection de la clé |
 | `update.rs` | Mise à jour depuis GitHub Releases |
-| `app.rs`, `app/stats.rs` | Interface egui, vue Statistiques |
+| `app.rs`, `app/*.rs` | Interface egui (chargement, actions, vues, clavier, dialogues, arbre, statistiques) |
+| `monitor.rs`, `usage.rs` | Programmes ouverts et temps d'utilisation |
 
 ## Feuille de route
 
@@ -269,6 +287,8 @@ cargo test -- --ignored
   import de programmes, séparateurs, liens web et icônes de groupe.~~ ✔
 - ~~**v0.8** : éjection fiable, favoris réorganisables, emplacement à la
   création, saisie des raccourcis au clavier, calendrier des alarmes.~~ ✔
+- ~~**v0.9** : code réorganisé, retour arrière, programmes ouverts,
+  duplication, sélection multiple, temps d'utilisation.~~ ✔
 
 ## Licence
 
