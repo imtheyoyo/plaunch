@@ -64,6 +64,26 @@ vous gardez votre arborescence de raccourcis telle quelle.
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.8
+
+- **Éjection de la clé corrigée** (Windows 11) : PStart-rs se ferme et un
+  assistant lancé depuis le dossier temporaire demande à Windows de retirer
+  le périphérique (comme « Retirer le périphérique en toute sécurité »). Un
+  message confirme l'éjection ou indique ce qui la bloque (programme, fichier
+  ouvert).
+- **Favoris réorganisables** : glisser-déposer dans la barre, ou clic droit →
+  « Déplacer à gauche / à droite ». L'ordre est gardé dans PStart.xml.
+- **Emplacement choisi à la création** : le formulaire indique où le raccourci,
+  le groupe ou le lien sera créé et permet de choisir un autre groupe ; après
+  création, l'élément est affiché et sélectionné dans l'arbre.
+- **Raccourcis clavier saisis au clavier** : cliquer sur le champ puis appuyer
+  sur la combinaison (Échap annule, Suppr efface), pour un programme comme
+  pour l'affichage de la fenêtre.
+- **Alarmes avec calendrier** : choix de la date dans un calendrier du mois,
+  heure et minutes réglables, raccourcis « +1 h » et « Demain 9:00 ».
+- **Nouveaux programmes détectés** : la fenêtre d'ajout s'ouvre d'elle-même
+  au démarrage.
+
 ### Nouveautés de la v0.7
 
 - **Mises à jour vérifiées** : chaque version publie `pstart-rs.exe.sha256` ;
@@ -240,6 +260,8 @@ cargo test -- --ignored
   automatique, exécutable allégé, recherche floue, variables de chemin,
   groupes de lancement, raccourcis par programme, éjection, détection et
   import de programmes, séparateurs, liens web et icônes de groupe.~~ ✔
+- ~~**v0.8** : éjection fiable, favoris réorganisables, emplacement à la
+  création, saisie des raccourcis au clavier, calendrier des alarmes.~~ ✔
 
 ## Licence
 

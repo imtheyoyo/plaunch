@@ -38,6 +38,20 @@ pub fn combo_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
     Some(parts.join("+"))
 }
 
+fn is_modifier(key: egui::Key) -> bool {
+    matches!(
+        key,
+        egui::Key::ShiftLeft
+            | egui::Key::ShiftRight
+            | egui::Key::ControlLeft
+            | egui::Key::ControlRight
+            | egui::Key::AltLeft
+            | egui::Key::AltRight
+            | egui::Key::SuperLeft
+            | egui::Key::SuperRight
+    )
+}
+
 /// Champ de raccourci : un clic, puis la combinaison au clavier. Échap
 /// annule, Retour arrière ou Suppr efface. Renvoie `true` si la valeur a changé.
 pub fn hotkey_capture(ui: &mut egui::Ui, value: &mut String, salt: &str) -> bool {
@@ -78,7 +92,11 @@ pub fn hotkey_capture(ui: &mut egui::Ui, value: &mut String, salt: &str) -> bool
                         pressed: true,
                         modifiers,
                         ..
-                    } => Some((*key, *modifiers)),
+                    } if !is_modifier(*key) => Some((*key, *modifiers)),
+                    // Ctrl+C, Ctrl+V et Ctrl+X arrivent comme copier/coller.
+                    egui::Event::Copy => Some((egui::Key::C, i.modifiers)),
+                    egui::Event::Cut => Some((egui::Key::X, i.modifiers)),
+                    egui::Event::Paste(_) => Some((egui::Key::V, i.modifiers)),
                     _ => None,
                 })
             });
@@ -385,6 +403,7 @@ mod tests {
             Some("Ctrl+Alt+V")
         );
         assert_eq!(combo_text(egui::Key::V, egui::Modifiers::NONE), None);
+        assert!(is_modifier(egui::Key::AltLeft) && !is_modifier(egui::Key::V));
         assert_eq!(
             combo_text(egui::Key::F9, egui::Modifiers::NONE).as_deref(),
             Some("F9")

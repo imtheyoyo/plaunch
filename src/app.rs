@@ -2875,12 +2875,13 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                     delete = true;
                 }
             });
-            ui.horizontal_wrapped(|ui| {
-                if widgets::alarm_editor(ui, &mut note.alarm, i) {
-                    note.sync_input();
-                    changed = true;
-                }
-                if note.alarm.is_some() {
+            if widgets::alarm_editor(ui, &mut note.alarm, i) {
+                note.sync_input();
+                changed = true;
+            }
+            if note.alarm.is_some() {
+                ui.horizontal(|ui| {
+                    ui.label(tr("Répéter"));
                     let before = note.repeat;
                     egui::ComboBox::from_id_salt(("repeat", i))
                         .selected_text(note.repeat.label())
@@ -2890,8 +2891,8 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                             }
                         });
                     changed |= note.repeat != before;
-                }
-            });
+                });
+            }
         });
     (changed, delete)
 }

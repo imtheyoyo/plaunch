@@ -674,6 +674,7 @@ const EN: &[(&str, &str)] = &[
     ("▶ Tout lancer", "▶ Launch all"),
     ("＋ {} nouveaux programmes", "＋ {} new programs"),
     // v0.8
+    ("Répéter", "Repeat"),
     ("(aucun) : cliquer pour définir", "(none): click to set"),
     ("(racine)", "(root)"),
     ("+1 h", "+1 h"),
