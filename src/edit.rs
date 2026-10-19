@@ -208,6 +208,18 @@ pub fn find_or_create_group(cfg: &mut Config, name: &str) -> Result<ItemPath, St
     insert(cfg, &[], None, NewItem::Group { name: name.into() })
 }
 
+/// Fixe l'ordre de la barre des favoris (numéros 1, 2, 3…).
+pub fn reorder_favorites(cfg: &mut Config, order: &[ItemPath]) -> Result<(), String> {
+    for (i, p) in order.iter().enumerate() {
+        let el = node_mut(files_mut(cfg), p).ok_or(tr("élément introuvable"))?;
+        let mut o = EntryOptions::of(el);
+        o.favorite = true;
+        o.favorite_rank = i as u32 + 1;
+        config::set_entry_options(el, &o);
+    }
+    Ok(())
+}
+
 /// Épingle ou désépingle un raccourci.
 pub fn set_favorite(cfg: &mut Config, path: &[usize], on: bool) -> Result<(), String> {
     let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
@@ -469,6 +481,7 @@ mod tests {
             autorun: true,
             admin: true,
             favorite: true,
+            favorite_rank: 0,
             hotkey: "Ctrl+Alt+V".into(),
         };
         update_entry(
@@ -569,6 +582,31 @@ mod tests {
         assert_eq!(find_or_create_group(&mut c, "Outils").unwrap(), vec![2]);
         let g = find_or_create_group(&mut c, "Nouveaux").unwrap();
         assert_eq!(g, vec![5]);
+    }
+
+    #[test]
+    fn favorites_order() {
+        let mut c = cfg();
+        set_favorite(&mut c, &[0, 0], true).unwrap(); // VLC
+        set_favorite(&mut c, &[4], true).unwrap(); // Notepad2
+        let names = |c: &Config| {
+            c.favorites()
+                .iter()
+                .map(|e| e.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&c), ["VLC media player", "Notepad2"]);
+        reorder_favorites(&mut c, &[vec![4], vec![0, 0]]).unwrap();
+        assert_eq!(names(&c), ["Notepad2", "VLC media player"]);
+        assert_eq!(c.item(&[4]).unwrap().child_text("favorite"), Some("1"));
+        // Un nouveau favori sans numéro va à la fin.
+        set_favorite(&mut c, &[1, 0], true).unwrap();
+        assert_eq!(
+            names(&c).last().map(String::as_str),
+            Some("Audacity® Sound Editor")
+        );
+        assert_eq!(crate::config::favorite_value("True"), (true, 0));
+        assert_eq!(crate::config::favorite_value("abc"), (false, 0));
     }
 
     #[test]

@@ -82,6 +82,7 @@ impl Note {
     }
 
     /// Valide la saisie de l'alarme ; renvoie `false` si elle est invalide.
+    #[cfg(test)]
     pub fn apply_input(&mut self) -> bool {
         let s = self.alarm_input.trim();
         if s.is_empty() {
@@ -99,6 +100,7 @@ impl Note {
 }
 
 /// Accepte `AAAA/MM/JJ HH:MM`, avec `-` ou `/` et secondes facultatives.
+#[cfg(test)]
 pub fn parse_input(s: &str) -> Option<NaiveDateTime> {
     let s = s.trim().replace('-', "/");
     NaiveDateTime::parse_from_str(&s, INPUT_FORMAT)

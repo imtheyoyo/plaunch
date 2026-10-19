@@ -38,6 +38,8 @@ pub struct FlatEntry {
     pub runcount: u32,
     pub rundate: Option<String>,
     pub favorite: bool,
+    /// Position dans la barre des favoris (0 : non fixée).
+    pub favorite_rank: u32,
     pub autorun: bool,
 }
 
@@ -93,6 +95,8 @@ pub struct EntryOptions {
     pub autorun: bool,
     pub admin: bool,
     pub favorite: bool,
+    /// Position dans la barre des favoris (0 : non fixée, ordre du fichier).
+    pub favorite_rank: u32,
     /// Raccourci clavier global qui lance ce programme (`Ctrl+Alt+V`).
     pub hotkey: String,
 }
@@ -106,9 +110,22 @@ impl EntryOptions {
             window: WindowState::from_key(&text("windowstate")),
             autorun: is_true(&text("autorun")),
             admin: is_true(&text("runasadmin")),
-            favorite: is_true(&text("favorite")),
+            favorite: favorite_value(&text("favorite")).0,
+            favorite_rank: favorite_value(&text("favorite")).1,
             hotkey: text("globalhotkey"),
         }
+    }
+}
+
+/// `<favorite>` : `True` (épinglé) ou un numéro d'ordre dans la barre.
+pub fn favorite_value(s: &str) -> (bool, u32) {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("true") {
+        return (true, 0);
+    }
+    match s.parse::<u32>() {
+        Ok(n) if n > 0 => (true, n),
+        _ => (false, 0),
     }
 }
 
@@ -168,7 +185,14 @@ pub fn set_entry_options(el: &mut Element, o: &EntryOptions) {
     set_tag(el, "windowstate", ws.as_deref());
     set_tag(el, "autorun", flag(o.autorun).as_deref());
     set_tag(el, "runasadmin", flag(o.admin).as_deref());
-    set_tag(el, "favorite", flag(o.favorite).as_deref());
+    let fav = o.favorite.then(|| {
+        if o.favorite_rank > 0 {
+            o.favorite_rank.to_string()
+        } else {
+            "True".to_string()
+        }
+    });
+    set_tag(el, "favorite", fav.as_deref());
     set_tag(el, "globalhotkey", opt(&o.hotkey).as_deref());
 }
 
@@ -310,13 +334,28 @@ impl Config {
                     target: self.resolve(child),
                     runcount: runcount(child),
                     rundate: child.child_text("rundate").map(str::to_string),
-                    favorite: is_true(child.child_text("favorite").unwrap_or("").trim()),
+                    favorite: favorite_value(child.child_text("favorite").unwrap_or("")).0,
+                    favorite_rank: favorite_value(child.child_text("favorite").unwrap_or("")).1,
                     autorun: is_true(child.child_text("autorun").unwrap_or("").trim()),
                 }),
                 _ => {}
             }
             path.pop();
         }
+    }
+
+    /// Favoris dans l'ordre de la barre (numéro, puis ordre du fichier).
+    pub fn favorites(&self) -> Vec<FlatEntry> {
+        let mut favs: Vec<FlatEntry> = self.flatten().into_iter().filter(|e| e.favorite).collect();
+        // Tri stable : à numéro égal, l'ordre du fichier est conservé.
+        favs.sort_by_key(|e| {
+            if e.favorite_rank == 0 {
+                u32::MAX
+            } else {
+                e.favorite_rank
+            }
+        });
+        favs
     }
 
     /// Option booléenne `True`/`False` de PStart.

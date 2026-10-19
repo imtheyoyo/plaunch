@@ -1,6 +1,6 @@
 [package]
 name = "pstart-rs"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Lanceur portable pour clé USB, compatible avec les fichiers PStart.xml"
 license = "MIT"
@@ -25,12 +25,15 @@ serde_json = "1"
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.7"
 windows-sys = { version = "0.61", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_Threading",

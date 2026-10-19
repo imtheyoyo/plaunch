@@ -673,6 +673,57 @@ const EN: &[(&str, &str)] = &[
     ("Éjecter la clé…", "Eject drive…"),
     ("▶ Tout lancer", "▶ Launch all"),
     ("＋ {} nouveaux programmes", "＋ {} new programs"),
+    // v0.8
+    ("(aucun) : cliquer pour définir", "(none): click to set"),
+    ("(racine)", "(root)"),
+    ("+1 h", "+1 h"),
+    ("Appuyez sur la combinaison…", "Press the key combination…"),
+    ("Aujourd'hui", "Today"),
+    ("Choisir la date", "Choose the date"),
+    (
+        "Cliquez puis appuyez sur les touches (Échap pour annuler)",
+        "Click, then press the keys (Esc to cancel)",
+    ),
+    ("Créé dans « {} »", "Created in “{}”"),
+    (
+        "Date passée : le rappel partira tout de suite.",
+        "Date in the past: the reminder will fire right away.",
+    ),
+    ("Demain 9:00", "Tomorrow 9:00"),
+    ("Déplacer à droite ▶", "Move right ▶"),
+    ("Effacer", "Clear"),
+    ("Glisser pour déplacer", "Drag to move"),
+    (
+        "La clé {}: peut être retirée en toute sécurité.",
+        "Drive {}: can now be safely removed.",
+    ),
+    (
+        "Rappel à l'heure choisie, même fenêtre masquée",
+        "Reminder at the chosen time, even with the window hidden",
+    ),
+    ("Retirer l'alarme", "Remove alarm"),
+    ("Séparateur ajouté dans « {} »", "Separator added in “{}”"),
+    (
+        "Windows refuse d'éjecter la clé {}: : {}",
+        "Windows refuses to eject drive {}:: {}",
+    ),
+    ("fichier ouvert par {}", "file open in {}"),
+    ("lecteur introuvable", "drive not found"),
+    ("périphérique introuvable", "device not found"),
+    ("refus de Windows (code {})", "refused by Windows (code {})"),
+    (
+        "refus sans motif (fermez les fenêtres ouvertes sur la clé)",
+        "refused without reason (close windows open on the drive)",
+    ),
+    (
+        "un fichier de la clé est encore ouvert",
+        "a file on the drive is still open",
+    ),
+    ("utilisé par {} (code {})", "in use by {} (code {})"),
+    ("{} (après la sélection)", "{} (after the selection)"),
+    ("{} (à la fin)", "{} (at the end)"),
+    ("⏰ Ajouter une alarme", "⏰ Add an alarm"),
+    ("◀ Déplacer à gauche", "◀ Move left"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (

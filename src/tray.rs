@@ -153,7 +153,7 @@ fn build_menu(shared: &Shared) -> Menu {
         if let Some(files) = cfg.files() {
             let icons = shared.icons.lock().unwrap();
             // Favoris en tête de menu.
-            let favorites: Vec<_> = cfg.flatten().into_iter().filter(|e| e.favorite).collect();
+            let favorites = cfg.favorites();
             for e in &favorites {
                 let _ = menu.append(&IconMenuItem::with_id(
                     entry_id(&e.path),

@@ -28,6 +28,7 @@ use crate::{
 };
 
 mod stats;
+mod widgets;
 
 const ICON_SIZE: f32 = 18.0;
 const MAX_HITS: usize = 60;
@@ -63,6 +64,10 @@ impl View {
 
 /// Largeur de la fenêtre en mode compact.
 pub const COMPACT_WIDTH: f32 = 340.0;
+
+/// Favori déplacé dans la barre (position).
+#[derive(Clone, Copy)]
+struct FavDrag(usize);
 
 /// Charge utile d'un glisser-déposer interne.
 #[derive(Clone)]
@@ -150,6 +155,10 @@ enum Action {
     IgnoreFound(Vec<String>),
     MakePortable,
     OpenLog,
+    MoveFavorite {
+        from: usize,
+        to: usize,
+    },
 }
 
 /// Éjection en cours (fermeture des programmes en tâche de fond).
@@ -183,6 +192,8 @@ struct EditForm {
     options: EntryOptions,
     /// Icône d'un groupe.
     icon: String,
+    /// Groupes où créer l'élément (chemin, libellé « A › B »).
+    groups: Vec<(ItemPath, String)>,
     error: Option<String>,
     focus: bool,
 }
@@ -464,9 +475,10 @@ impl PStartApp {
         self.shared
             .set_status(trf("{} nouveaux programmes détectés", &[&found.len()]));
         self.found = found;
-        // Recherche demandée : affichage immédiat. Au démarrage, seul le
-        // bouton de la barre d'état le signale.
-        if !quiet && (self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_)))) {
+        // Affichage immédiat (au démarrage aussi), sauf si une autre
+        // fenêtre est ouverte : le bouton de la barre d'état reste alors.
+        let _ = quiet;
+        if self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_))) {
             self.apply(Action::ShowFound);
         }
     }
@@ -664,7 +676,7 @@ impl PStartApp {
 
     /// Raccourcis épinglés, dans l'ordre du fichier.
     fn favorites(cfg: &Config) -> Vec<config::FlatEntry> {
-        cfg.flatten().into_iter().filter(|e| e.favorite).collect()
+        cfg.favorites()
     }
 
     /// Enregistre les notes si elles ont été modifiées.
@@ -1052,10 +1064,18 @@ impl PStartApp {
             }
             Action::NewSeparator(at) => {
                 let selected = at.or_else(|| self.selected.clone());
-                self.shared.modify(|c| {
+                let created = self.shared.modify(|c| {
                     let (parent, index) = edit::insertion_point(c, selected.as_deref());
                     edit::insert(c, &parent, index, NewItem::Separator)
                 });
+                if let Some(p) = created {
+                    let parent = p[..p.len() - 1].to_vec();
+                    self.reveal(&parent);
+                    self.selected = selected;
+                    let place = self.location_label(&p);
+                    self.shared
+                        .set_status(trf("Séparateur ajouté dans « {} »", &[&place]));
+                }
             }
             Action::NewLink(at) => {
                 self.open_form(at, false);
@@ -1096,6 +1116,21 @@ impl PStartApp {
                         .set_status(trf("{} chemins rendus relatifs", &[&n]));
                 }
             }
+            Action::MoveFavorite { from, to } => {
+                let order = {
+                    let guard = self.shared.config.lock().unwrap();
+                    let Some(cfg) = guard.as_ref() else { return };
+                    let mut paths: Vec<ItemPath> =
+                        cfg.favorites().into_iter().map(|e| e.path).collect();
+                    if from >= paths.len() || to >= paths.len() || from == to {
+                        return;
+                    }
+                    let p = paths.remove(from);
+                    paths.insert(to, p);
+                    paths
+                };
+                self.shared.modify(|c| edit::reorder_favorites(c, &order));
+            }
             Action::OpenLog => {
                 let path = crate::log::path();
                 if let Err(e) = launcher::launch(&path.to_string_lossy(), None) {
@@ -1103,6 +1138,35 @@ impl PStartApp {
                 }
             }
         }
+    }
+
+    /// Montre un élément : groupes parents ouverts, sélection, défilement.
+    fn reveal(&mut self, path: &[usize]) {
+        {
+            let guard = self.shared.config.lock().unwrap();
+            if let Some(cfg) = guard.as_ref() {
+                for n in 1..path.len() {
+                    if let Some(k) = group_key_at(cfg, &path[..n]) {
+                        self.open_groups.insert(k);
+                    }
+                }
+            }
+        }
+        self.search.clear();
+        self.view = View::Tree;
+        if !path.is_empty() {
+            self.selected = Some(path.to_vec());
+        }
+        self.scroll_to_selected = true;
+    }
+
+    /// « Racine » ou « Groupe › Sous-groupe » de l'élément.
+    fn location_label(&self, path: &[usize]) -> String {
+        let guard = self.shared.config.lock().unwrap();
+        let Some(cfg) = guard.as_ref() else {
+            return String::new();
+        };
+        group_label(cfg, &path[..path.len().saturating_sub(1)])
     }
 
     fn undo_redo(&self, redo: bool) {
@@ -1297,7 +1361,7 @@ impl PStartApp {
             Ok(last)
         });
         if let Some(Some(p)) = last {
-            self.selected = Some(p);
+            self.reveal(&p);
             self.shared.set_status(match count {
                 1 => tr("Raccourci ajouté").to_string(),
                 n => trf("{} raccourcis ajoutés", &[&n]),
@@ -1315,6 +1379,10 @@ impl PStartApp {
             let sel = at.as_deref().or(self.selected.as_deref());
             edit::insertion_point(cfg, sel)
         };
+        let groups = {
+            let guard = self.shared.config.lock().unwrap();
+            guard.as_ref().map(group_choices).unwrap_or_default()
+        };
         let kind = if group {
             FormKind::NewGroup { parent, index }
         } else {
@@ -1327,6 +1395,7 @@ impl PStartApp {
             directory: String::new(),
             options: EntryOptions::default(),
             icon: String::new(),
+            groups,
             error: None,
             focus: true,
         }));
@@ -1347,6 +1416,7 @@ impl PStartApp {
                     directory: String::new(),
                     options: EntryOptions::default(),
                     icon: el.attr("icon").unwrap_or("").to_string(),
+                    groups: Vec::new(),
                     error: None,
                     focus: true,
                 }
@@ -1358,6 +1428,7 @@ impl PStartApp {
                     directory: el.child_text("directory").unwrap_or("").to_string(),
                     options: EntryOptions::of(el),
                     icon: String::new(),
+                    groups: Vec::new(),
                     error: None,
                     focus: true,
                 }
@@ -1586,9 +1657,18 @@ impl PStartApp {
         };
         if let Some(p) = result {
             let is_group = form.is_group();
-            self.selected = Some(p);
+            let created = matches!(
+                form.kind,
+                FormKind::NewEntry { .. } | FormKind::NewGroup { .. }
+            );
             self.dialog = None;
-            self.shared.set_status(tr("Enregistré"));
+            self.reveal(&p);
+            if created {
+                let place = self.location_label(&p);
+                self.shared.set_status(trf("Créé dans « {} »", &[&place]));
+            } else {
+                self.shared.set_status(tr("Enregistré"));
+            }
             if !is_group {
                 let target = self.resolve_path(&path);
                 self.refresh_target(target);
@@ -1727,11 +1807,48 @@ impl PStartApp {
                         ui.add(egui::Button::new(initial).min_size(egui::vec2(28.0, 28.0)))
                     }
                 };
-                let resp = resp.on_hover_text(tip);
+                let resp = resp
+                    .on_hover_text(format!("{tip}\n{}", tr("Glisser pour déplacer")))
+                    .interact(egui::Sense::drag());
                 if resp.clicked() {
                     actions.push(Action::Launch(e.path.clone()));
                 }
+                // Glisser-déposer pour changer l'ordre.
+                resp.dnd_set_drag_payload(FavDrag(i));
+                if let Some(from) = resp.dnd_hover_payload::<FavDrag>() {
+                    if from.0 != i {
+                        let x = if from.0 < i {
+                            resp.rect.right()
+                        } else {
+                            resp.rect.left()
+                        };
+                        ui.painter()
+                            .vline(x, resp.rect.y_range(), ui.visuals().selection.stroke);
+                    }
+                }
+                if let Some(from) = resp.dnd_release_payload::<FavDrag>() {
+                    actions.push(Action::MoveFavorite {
+                        from: from.0,
+                        to: i,
+                    });
+                }
+                let count = favorites.len();
                 resp.context_menu(|ui| {
+                    if ui
+                        .add_enabled(i > 0, egui::Button::new(tr("◀ Déplacer à gauche")))
+                        .clicked()
+                    {
+                        actions.push(Action::MoveFavorite { from: i, to: i - 1 });
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(i + 1 < count, egui::Button::new(tr("Déplacer à droite ▶")))
+                        .clicked()
+                    {
+                        actions.push(Action::MoveFavorite { from: i, to: i + 1 });
+                        ui.close();
+                    }
+                    ui.separator();
                     if ui.button(tr("Retirer des favoris")).clicked() {
                         actions.push(Action::ToggleFavorite(e.path.clone()));
                         ui.close();
@@ -2547,6 +2664,34 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
         .num_columns(2)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
+            if let FormKind::NewEntry { parent, index } | FormKind::NewGroup { parent, index } =
+                &mut form.kind
+            {
+                ui.label(tr("Emplacement"));
+                let current = form
+                    .groups
+                    .iter()
+                    .find(|(p, _)| p == parent)
+                    .map(|(_, l)| l.clone())
+                    .unwrap_or_else(|| tr("(racine)").to_string());
+                let place = if index.is_some() {
+                    trf("{} (après la sélection)", &[&current])
+                } else {
+                    trf("{} (à la fin)", &[&current])
+                };
+                egui::ComboBox::from_id_salt("location")
+                    .selected_text(place)
+                    .width(300.0)
+                    .show_ui(ui, |ui| {
+                        for (p, label) in &form.groups {
+                            if ui.selectable_label(p == parent, label).clicked() {
+                                *parent = p.clone();
+                                *index = None;
+                            }
+                        }
+                    });
+                ui.end_row();
+            }
             ui.label(tr("Nom"));
             let name = ui.add(egui::TextEdit::singleline(&mut form.name).desired_width(300.0));
             if form.focus {
@@ -2618,17 +2763,10 @@ fn form_ui(ui: &mut egui::Ui, form: &mut EditForm, base: &str, actions: &mut Vec
                 ui.label(tr("Description"));
                 ui.add(egui::TextEdit::singleline(&mut o.description).desired_width(300.0));
                 ui.end_row();
-                ui.label(tr("Raccourci clavier"));
-                let valid = o.hotkey.trim().is_empty() || hotkey::parse(&o.hotkey).is_ok();
-                let mut hk = egui::TextEdit::singleline(&mut o.hotkey)
-                    .desired_width(160.0)
-                    .hint_text(tr("ex. Ctrl+Alt+V"));
-                if !valid {
-                    hk = hk.text_color(ui.visuals().error_fg_color);
-                }
-                ui.add(hk).on_hover_text(tr(
+                ui.label(tr("Raccourci clavier")).on_hover_text(tr(
                     "Lance ce programme depuis n'importe où, même fenêtre masquée",
                 ));
+                widgets::hotkey_capture(ui, &mut o.hotkey, "entry");
                 ui.end_row();
                 ui.label(tr("Fenêtre"));
                 egui::ComboBox::from_id_salt("windowstate")
@@ -2733,21 +2871,14 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                     }
                 }
                 ui.add_space(8.0);
-                ui.label(tr("Alarme"));
-                let valid = notes::parse_input(&note.alarm_input).is_some()
-                    || note.alarm_input.trim().is_empty();
-                let mut edit = egui::TextEdit::singleline(&mut note.alarm_input)
-                    .hint_text(tr("AAAA/MM/JJ HH:MM"))
-                    .desired_width(120.0);
-                if !valid {
-                    edit = edit.text_color(egui::Color32::from_rgb(180, 0, 0));
+                if ui.small_button(tr("Supprimer")).clicked() {
+                    delete = true;
                 }
-                let resp = ui.add(edit);
-                if resp.changed() && note.apply_input() {
-                    changed = true;
-                }
-                if resp.lost_focus() && note.apply_input() {
+            });
+            ui.horizontal_wrapped(|ui| {
+                if widgets::alarm_editor(ui, &mut note.alarm, i) {
                     note.sync_input();
+                    changed = true;
                 }
                 if note.alarm.is_some() {
                     let before = note.repeat;
@@ -2759,9 +2890,6 @@ fn note_card(ui: &mut egui::Ui, i: usize, note: &mut Note, palette: &[[u8; 3]]) 
                             }
                         });
                     changed |= note.repeat != before;
-                }
-                if ui.small_button(tr("Supprimer")).clicked() {
-                    delete = true;
                 }
             });
         });
@@ -2938,18 +3066,7 @@ fn settings_ui(
 
             ui.label(tr("Raccourci global"));
             let mut hk = s.hotkey.clone().unwrap_or_default();
-            let valid = hk.trim().is_empty() || hk.parse::<global_hotkey::hotkey::HotKey>().is_ok();
-            let mut edit = egui::TextEdit::singleline(&mut hk)
-                .hint_text(tr("désactivé"))
-                .desired_width(180.0);
-            if !valid {
-                edit = edit.text_color(ui.visuals().error_fg_color);
-            }
-            if ui
-                .add(edit)
-                .on_hover_text(tr("Ex. Ctrl+Shift+Space, Ctrl+Alt+P"))
-                .changed()
-            {
+            if widgets::hotkey_capture(ui, &mut hk, "global") {
                 s.hotkey = (!hk.trim().is_empty()).then(|| hk.trim().to_string());
             }
             ui.end_row();
@@ -3230,6 +3347,39 @@ fn start_hits<'a>(items: &'a [StartItem], query: &str) -> Vec<&'a StartItem> {
         .collect();
     hits.sort_by_key(|h| std::cmp::Reverse(h.0));
     hits.into_iter().take(MAX_HITS).map(|(_, i)| i).collect()
+}
+
+/// Libellé d'un groupe : « (racine) » ou « A › B ».
+fn group_label(cfg: &Config, path: &[usize]) -> String {
+    if path.is_empty() {
+        return tr("(racine)").to_string();
+    }
+    (1..=path.len())
+        .filter_map(|n| {
+            cfg.item(&path[..n])
+                .map(|e| config::display_name(e).to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(" › ")
+}
+
+/// Tous les groupes, pour choisir où créer un élément.
+fn group_choices(cfg: &Config) -> Vec<(ItemPath, String)> {
+    fn walk(cfg: &Config, el: &Element, path: &mut ItemPath, out: &mut Vec<(ItemPath, String)>) {
+        for (i, c) in el.children.iter().enumerate() {
+            if c.name == "files" {
+                path.push(i);
+                out.push((path.clone(), group_label(cfg, path)));
+                walk(cfg, c, path, out);
+                path.pop();
+            }
+        }
+    }
+    let mut out = vec![(Vec::new(), tr("(racine)").to_string())];
+    if let Some(files) = cfg.files() {
+        walk(cfg, files, &mut Vec::new(), &mut out);
+    }
+    out
 }
 
 /// Icônes de groupe (chemins résolus) à charger.

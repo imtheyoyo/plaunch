@@ -263,6 +263,7 @@ mod tests {
             runcount: 1,
             rundate: date.map(str::to_string),
             favorite: false,
+            favorite_rank: 0,
             autorun: false,
         }
     }

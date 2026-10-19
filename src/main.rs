@@ -48,6 +48,12 @@ fn find_config() -> Option<PathBuf> {
 fn main() -> eframe::Result {
     // Second lancement : on réveille la fenêtre existante et on s'arrête.
     log::install_panic_hook();
+    // Assistant d'éjection lancé depuis le dossier temporaire.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some((drive, pid)) = eject::parse_helper_args(&args) {
+        eject::run_helper(drive, pid);
+        return Ok(());
+    }
     // Après une mise à jour, l'ancienne instance met un instant à se fermer.
     let restarted = std::env::var_os(update::RESTART_ENV).is_some();
     let mut acquired = instance::acquire();
@@ -63,6 +69,7 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     update::cleanup();
+    eject::cleanup_helper();
     log::info(&format!(
         "démarrage de PStart-rs {} ({})",
         env!("CARGO_PKG_VERSION"),
