@@ -1,0 +1,32 @@
+name: release-notes
+
+# Recopie les sections de CHANGELOG.md dans les notes des releases.
+on:
+  push:
+    branches: [main]
+    paths: [CHANGELOG.md, .github/scripts/release_notes.py]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Notes par version
+        run: python3 .github/scripts/release_notes.py notes
+      - name: Mise à jour des releases existantes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in notes/*.md; do
+            tag=$(basename "$f" .md)
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --notes-file "$f"
+              echo "notes mises à jour : $tag"
+            else
+              echo "pas encore de release : $tag"
+            fi
+          done

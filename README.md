@@ -270,6 +270,10 @@ cargo test -- --ignored
 | `app.rs`, `app/*.rs` | Interface egui (chargement, actions, vues, clavier, dialogues, arbre, statistiques) |
 | `monitor.rs`, `usage.rs` | Programmes ouverts et temps d'utilisation |
 
+## Journal des modifications
+
+Voir [CHANGELOG.md](CHANGELOG.md) ; chaque release reprend la section de sa version.
+
 ## Feuille de route
 
 - ~~**v0.2** : icônes des programmes, icône de notification avec menu en cascade,

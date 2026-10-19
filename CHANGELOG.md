@@ -1,0 +1,134 @@
+# Journal des modifications
+
+Toutes les versions de PStart-rs. Les fichiers à télécharger
+(`pstart-rs.exe` et, depuis la 0.7, son empreinte `pstart-rs.exe.sha256`)
+sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
+
+## v0.9.0
+
+- **Code réorganisé** : l'interface est découpée en modules (chargement,
+  actions, vues, clavier, fenêtres de dialogue, arbre, statistiques), pour des
+  corrections plus rapides et plus sûres.
+- **Retour à la version précédente** : après une mise à jour, l'ancien
+  exécutable est gardé ; Réglages → Mises à jour → « ↩ Revenir à la
+  version… » le remet en place et redémarre (et inversement).
+- **Programmes en cours d'exécution** : un point vert les signale ; lancer un
+  programme déjà ouvert ramène sa fenêtre au premier plan. Clic droit →
+  « Lancer une autre instance » pour en ouvrir une seconde. Réglable.
+- **Dupliquer un raccourci** (clic droit → Dupliquer), sans ses statistiques,
+  son épinglage ni son raccourci clavier.
+- **Sélection multiple** (`Ctrl+clic`, `Maj+clic`) : lancer, épingler,
+  déplacer vers un groupe (ordre conservé) ou supprimer plusieurs éléments.
+- **Temps d'utilisation** par programme, mesuré en continu (onglet
+  Statistiques et panneau de détails), enregistré dans `pstart-rs-usage.txt`.
+
+## v0.8.1
+
+- **Création d'un PStart.xml** : sans fichier au lancement, l'écran d'accueil
+  propose d'en créer un à côté de l'exécutable (ou au chemin passé en
+  argument), de le créer ailleurs ou d'ouvrir un fichier existant.
+- Correctif : le panneau de détails ne devient plus trop étroit au démarrage
+  sans fichier.
+
+## v0.8.0
+
+- **Éjection de la clé corrigée** (Windows 11) : un assistant lancé depuis le
+  dossier temporaire attend la fermeture de PStart-rs puis demande à Windows
+  de retirer le périphérique ; un message confirme l'éjection ou indique ce
+  qui la bloque.
+- **Favoris réorganisables** : glisser-déposer dans la barre ou clic droit →
+  « Déplacer à gauche / à droite ».
+- **Emplacement choisi à la création** : le formulaire indique où l'élément
+  sera créé et permet de choisir un autre groupe ; l'élément est ensuite
+  affiché et sélectionné dans l'arbre.
+- **Raccourcis clavier saisis au clavier** : cliquer sur le champ puis appuyer
+  sur la combinaison (Échap annule, ✖ efface).
+- **Alarmes avec calendrier** : date choisie dans un calendrier du mois,
+  heure et minutes réglables, raccourcis « +1 h » et « Demain 9:00 ».
+- **Nouveaux programmes détectés** : la fenêtre d'ajout s'ouvre d'elle-même
+  au démarrage.
+
+## v0.7.0
+
+- **Mises à jour vérifiées** : empreinte SHA-256 publiée avec chaque version
+  et contrôlée avant installation.
+- **Journal** `pstart-rs.log` (erreurs, lancements échoués, mises à jour,
+  plantages avec pile d'appels).
+- **Annuler / rétablir** (`Ctrl+Z` / `Ctrl+Y`, boutons ↶ ↷) pour toute
+  modification.
+- **Rechargement automatique** de PStart.xml modifié par un autre programme.
+- **Exécutable allégé** (9,3 Mo au lieu de 16) avec **icône intégrée**.
+- **Recherche intelligente** : fautes de frappe, lettres inversées,
+  initiales, accents ignorés, programmes les plus lancés en tête.
+- **Variables de chemin** `%PSTART%` et `%DRIVE%` ; bouton « Rendre les
+  chemins portables ».
+- **Lancer tout un groupe**.
+- **Raccourci clavier par programme**, actif même fenêtre masquée.
+- **Éjection de la clé** depuis le menu de l'icône ou les réglages.
+- **Détection de nouveaux programmes** dans un dossier (format
+  PortableApps.com reconnu) et **import** d'un dossier de raccourcis `.lnk`.
+- **Séparateurs**, **liens web** et **icônes de groupe**.
+
+## v0.6.0
+
+- **Options par raccourci** : paramètres, description, fenêtre normale /
+  réduite / agrandie, exécuter en tant qu'administrateur, lancer au
+  démarrage de PStart-rs.
+- **Favoris** : barre sous la recherche, tête du menu de l'icône,
+  `Ctrl+1` à `Ctrl+9`.
+- **Changement de lettre de lecteur** détecté, avec correction des chemins
+  et de « Démarrer avec Windows ».
+- **Navigation au clavier** dans l'arbre et les résultats ; **mode compact**.
+- **Rappels en notification Windows** (ou boîte de message, ou les deux).
+- **Coin actif sur tous les écrans**.
+- **Sauvegarde / restauration** de PStart.xml, des notes et des réglages
+  (zip).
+- **Mise à jour intégrée** depuis GitHub Releases.
+- **Onglet Statistiques** : totaux, plus lancés, ancienneté, raccourcis
+  introuvables avec nettoyage.
+
+## v0.5.0
+
+- **Langue** : français ou anglais (automatique selon Windows), changement à
+  chaud.
+- **Thème** clair, sombre ou système, **taille du texte** réglable
+  (70 à 200 %).
+- **Icône personnalisable** : forme et couleur, ou fichier `.ico` / `.exe`,
+  appliquée à la fenêtre et à la zone de notification.
+
+## v0.4.0
+
+- **Notes avec alarmes** (onglet Notes), rappels uniques, quotidiens ou
+  hebdomadaires, même fenêtre masquée.
+- **Coin actif** : la fenêtre s'affiche quand la souris reste dans un coin ou
+  contre un bord de l'écran.
+- **Démarrer avec Windows**.
+- **Fenêtre de réglages** (bouton ⚙) et fichier `pstart-rs.ini`.
+
+## v0.3.0
+
+- **Édition** : nouveau raccourci ou groupe, modification (`F2`),
+  suppression (`Suppr`), chemins enregistrés en relatif.
+- **Glisser-déposer** pour réorganiser l'arbre et ajouter des fichiers depuis
+  l'Explorateur.
+- **Recherche dans le menu Démarrer** (utilisateur et tous les utilisateurs),
+  avec « Ajouter à PStart ».
+
+## v0.2.0
+
+- **Icônes** des programmes, extraites en tâche de fond.
+- **Icône dans la zone de notification** avec menu en cascade des groupes et
+  raccourcis.
+- **Raccourci clavier global** pour afficher ou masquer la fenêtre.
+- **Instance unique** : relancer l'exécutable réaffiche la fenêtre ouverte.
+
+## v0.1.0
+
+- Première version : lanceur egui qui lit et réécrit sans perte les fichiers
+  `PStart.xml` de PStart.
+- Arborescence des groupes, recherche instantanée, vues « Plus utilisés » et
+  « Récents ».
+- Lancement des programmes, documents et dossiers ; mise à jour des
+  compteurs `runcount` et `rundate`.
+- Chemins relatifs, racine du lecteur, absolus, UNC et variables
+  d'environnement ; raccourcis introuvables barrés.
