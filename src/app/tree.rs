@@ -4,6 +4,9 @@ use super::*;
 
 /// Contexte commun au dessin des lignes.
 pub(super) struct Rows<'a> {
+    pub(super) cfg: &'a Config,
+    /// Temps d'utilisation (infobulles).
+    pub(super) usage: &'a HashMap<String, u64>,
     pub(super) selected: &'a Option<ItemPath>,
     pub(super) exists: &'a HashMap<String, bool>,
     pub(super) textures: &'a Textures,
@@ -16,6 +19,54 @@ pub(super) struct Rows<'a> {
     pub(super) multi: &'a [ItemPath],
     /// Exécutables ouverts (clés `eject::path_key`).
     pub(super) running: &'a HashSet<String>,
+}
+
+impl Rows<'_> {
+    /// Infobulle d'un raccourci : description, cible, lancements, temps…
+    fn tooltip(
+        &self,
+        ui: &mut egui::Ui,
+        path: &[usize],
+        target: &str,
+        missing: bool,
+        running: bool,
+    ) {
+        ui.set_max_width(360.0);
+        let Some(el) = self.cfg.item(path) else {
+            ui.label(target);
+            return;
+        };
+        let o = EntryOptions::of(el);
+        ui.strong(config::display_name(el));
+        if !o.description.is_empty() {
+            ui.label(egui::RichText::new(&o.description).italics());
+        }
+        ui.add(egui::Label::new(egui::RichText::new(target).weak().small()).wrap());
+        if !o.parameters.is_empty() {
+            ui.label(egui::RichText::new(format!("{} {}", tr("Paramètres"), o.parameters)).small());
+        }
+        let runs = config::runcount(el);
+        let last = el.child_text("rundate").unwrap_or(tr("jamais"));
+        ui.label(egui::RichText::new(trf("Lancé {} fois · dernier : {}", &[&runs, &last])).small());
+        if let Some(secs) = self.usage.get(&crate::usage::key(config::entry_path(el))) {
+            ui.label(
+                egui::RichText::new(trf("Utilisé {}", &[&crate::usage::format_duration(*secs)]))
+                    .small(),
+            );
+        }
+        if !o.hotkey.is_empty() {
+            ui.label(egui::RichText::new(format!("⌨ {}", o.hotkey)).small());
+        }
+        if running {
+            ui.colored_label(
+                egui::Color32::from_rgb(46, 170, 90),
+                tr("En cours d'exécution"),
+            );
+        }
+        if missing {
+            ui.colored_label(ui.visuals().warn_fg_color, tr("Cible introuvable"));
+        }
+    }
 }
 
 /// Clic simple, Ctrl+clic ou Maj+clic sur une ligne.
@@ -159,6 +210,20 @@ impl Rows<'_> {
                     path: path.to_vec(),
                     confirmed: false,
                 });
+                ui.close();
+            }
+            let pinned = self
+                .cfg
+                .item(path)
+                .and_then(|e| e.attr("favorite"))
+                .is_some_and(|v| config::favorite_value(v).0);
+            let pin = if pinned {
+                tr("Retirer de la barre")
+            } else {
+                tr("Épingler dans la barre")
+            };
+            if ui.button(pin).clicked() {
+                actions.push(Action::ToggleGroupFavorite(path.to_vec()));
                 ui.close();
             }
             ui.separator();
@@ -350,9 +415,7 @@ impl Rows<'_> {
                 resp = resp.interact(egui::Sense::drag());
                 resp.dnd_set_drag_payload(DragItem(path.to_vec()));
             }
-            if missing {
-                resp = resp.on_hover_text(tr("Cible introuvable"));
-            }
+            resp = resp.on_hover_ui(|ui| self.tooltip(ui, path, target, missing, running));
             if is_selected && self.scroll_to {
                 resp.scroll_to_me(None);
             }

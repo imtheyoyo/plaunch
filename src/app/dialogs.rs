@@ -85,6 +85,38 @@ impl PLaunchApp {
                         }
                     });
                 }
+                Dialog::NewProfile { name, error } => {
+                    ui.heading(tr("Nouveau profil"));
+                    ui.add_space(8.0);
+                    ui.label(tr(
+                        "Un profil est un fichier de raccourcis séparé, dans le même dossier (ex. Travail, Maison).",
+                    ));
+                    ui.add_space(6.0);
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(name)
+                            .hint_text(tr("Nom du profil"))
+                            .desired_width(240.0),
+                    );
+                    if name.is_empty() && !resp.has_focus() {
+                        resp.request_focus();
+                    }
+                    if !name.trim().is_empty() {
+                        ui.weak(format!("PLaunch-{}.xml", name.trim()));
+                    }
+                    if let Some(e) = error {
+                        ui.colored_label(ui.visuals().error_fg_color, e.as_str());
+                    }
+                    ui.add_space(12.0);
+                    let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.horizontal(|ui| {
+                        if ui.button(tr("Créer")).clicked() || enter {
+                            actions.push(Action::NewProfile(name.clone()));
+                        }
+                        if ui.button(tr("Annuler")).clicked() {
+                            actions.push(Action::CloseDialog);
+                        }
+                    });
+                }
                 Dialog::ConfirmDeleteMany(paths) => {
                     ui.heading(tr("Supprimer"));
                     ui.add_space(8.0);

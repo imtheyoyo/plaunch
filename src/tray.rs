@@ -23,6 +23,7 @@ const ID_NOTES: &str = "notes";
 const ID_AUTOSTART: &str = "autostart";
 const ID_EJECT: &str = "eject";
 const ENTRY_PREFIX: &str = "e:";
+const PROFILE_PREFIX: &str = "p:";
 
 pub struct Tray {
     icon: TrayIcon,
@@ -116,7 +117,16 @@ fn install_handlers(shared: Arc<Shared>) {
                 shared.repaint();
             }
             _ => {
-                if let Some(path) = parse_entry_id(id) {
+                if let Some(name) = id.strip_prefix(PROFILE_PREFIX) {
+                    let file = shared
+                        .config
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map(|c| c.file.with_file_name(name));
+                    *shared.switch_profile.lock().unwrap() = file;
+                    shared.repaint();
+                } else if let Some(path) = parse_entry_id(id) {
                     shared.launch(&path);
                 }
             }
@@ -178,6 +188,34 @@ fn build_menu(shared: &Shared) -> Menu {
     }
     drop(guard);
 
+    // Profils (s'il y en a plusieurs).
+    let current = shared
+        .config
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.file.clone());
+    if let Some(cur) = &current {
+        let dir = cur.parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        let list = crate::profiles::list(&dir);
+        if list.len() > 1 {
+            let sub = Submenu::new(tr("Profil"), true);
+            for p in &list {
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let _ = sub.append(&CheckMenuItem::with_id(
+                    format!("{PROFILE_PREFIX}{name}"),
+                    menu_label(&crate::profiles::display_name(p)),
+                    true,
+                    p == cur,
+                    None,
+                ));
+            }
+            let _ = menu.append(&sub);
+        }
+    }
     let _ = menu.append(&MenuItem::with_id(ID_NOTES, tr("Notes…"), true, None));
     let _ = menu.append(&CheckMenuItem::with_id(
         ID_AUTOSTART,

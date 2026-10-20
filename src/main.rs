@@ -6,6 +6,7 @@ mod app;
 mod autostart;
 mod backup;
 mod config;
+mod drivecheck;
 mod edit;
 mod eject;
 mod fuzzy;
@@ -19,6 +20,7 @@ mod log;
 mod monitor;
 mod notes;
 mod paths;
+mod profiles;
 mod scan;
 mod settings;
 mod startmenu;
@@ -80,12 +82,21 @@ fn main() -> eframe::Result {
             .unwrap_or_default()
     ));
 
-    let file = find_config();
+    let mut file = find_config();
     let settings_path = file.as_deref().map(settings::path_for);
     let settings = settings_path
         .as_deref()
         .map(settings::load)
         .unwrap_or_default();
+    // Sans fichier demandé : dernier profil utilisé dans ce dossier.
+    if std::env::args_os().nth(1).is_none() {
+        if let (Some(f), Some(last)) = (&file, &settings.last_profile) {
+            let candidate = f.with_file_name(last);
+            if candidate.is_file() && profiles::is_profile(&candidate) {
+                file = Some(candidate);
+            }
+        }
+    }
     i18n::set_language(settings.language);
 
     let size = file

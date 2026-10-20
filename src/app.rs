@@ -188,6 +188,11 @@ enum Action {
     },
     AskDeleteMany(Vec<ItemPath>),
     Rollback,
+    SwitchProfile(PathBuf),
+    AskNewProfile,
+    NewProfile(String),
+    ToggleGroupFavorite(ItemPath),
+    DismissDriveWarnings,
     CreateConfig(PathBuf),
 }
 
@@ -272,6 +277,10 @@ enum Dialog {
     },
     ConfirmCleanup(Vec<ItemPath>),
     ConfirmDeleteMany(Vec<ItemPath>),
+    NewProfile {
+        name: String,
+        error: Option<String>,
+    },
     ConfirmRestore {
         file: PathBuf,
         contents: Vec<String>,
@@ -336,6 +345,8 @@ pub struct PLaunchApp {
     requested_file: Option<PathBuf>,
     /// Sélection multiple (Ctrl+clic, Maj+clic).
     multi: Vec<ItemPath>,
+    /// Problèmes du lecteur (lecture seule, place) signalés au chargement.
+    drive_warnings: Vec<String>,
 }
 
 impl PLaunchApp {
@@ -395,6 +406,7 @@ impl PLaunchApp {
             found_rx: None,
             requested_file: file.clone(),
             multi: Vec::new(),
+            drive_warnings: Vec::new(),
         };
         if let Some(f) = file.filter(|f| f.exists()) {
             app.open(&f);
@@ -488,6 +500,10 @@ impl eframe::App for PLaunchApp {
         if self.shared.ask_eject.swap(false, Ordering::SeqCst) {
             self.ask_eject();
         }
+        let switch = self.shared.switch_profile.lock().unwrap().take();
+        if let Some(p) = switch {
+            self.apply(Action::SwitchProfile(p));
+        }
         // PLaunch.xml modifié ailleurs : rechargement (pas pendant une saisie).
         let editing = matches!(
             self.dialog,
@@ -543,6 +559,10 @@ impl eframe::App for PLaunchApp {
                         {
                             actions.push(Action::OpenSettings);
                         }
+                    }
+                    if let Some(cfg) = cfg {
+                        self.profile_menu(ui, cfg, &mut actions);
+                        ui.separator();
                     }
                     ui.label(&status);
                     if let Some(cfg) = cfg {

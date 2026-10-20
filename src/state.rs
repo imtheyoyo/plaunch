@@ -50,6 +50,8 @@ pub struct Shared {
     pub redo: Mutex<Vec<Element>>,
     /// PLaunch.xml modifié par un autre programme : à recharger.
     pub file_changed: AtomicBool,
+    /// Profil choisi dans le menu de l'icône, à ouvrir.
+    pub switch_profile: Mutex<Option<std::path::PathBuf>>,
     /// Éjection demandée depuis le menu de l'icône.
     pub ask_eject: AtomicBool,
     /// Programmes ouverts : exécutable (clé `eject::path_key`) → processus.

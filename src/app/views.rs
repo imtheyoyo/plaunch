@@ -113,12 +113,61 @@ impl PLaunchApp {
         if let Some(cfg) = cfg {
             self.favorites_bar(ui, cfg, actions);
         }
+        if !self.drive_warnings.is_empty() {
+            ui.add_space(2.0);
+            egui::Frame::new()
+                .fill(ui.visuals().warn_fg_color.gamma_multiply(0.18))
+                .corner_radius(4.0)
+                .inner_margin(6.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            for w in &self.drive_warnings {
+                                ui.colored_label(ui.visuals().warn_fg_color, format!("⚠ {w}"));
+                            }
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                            if ui.small_button("✖").on_hover_text(tr("Masquer")).clicked() {
+                                actions.push(Action::DismissDriveWarnings);
+                            }
+                        });
+                    });
+                });
+        }
+    }
+
+    /// Menu des profils (barre d'état) : changer, créer.
+    pub(super) fn profile_menu(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
+        let dir = cfg.file.parent().map(Path::to_path_buf).unwrap_or_default();
+        let current = crate::profiles::display_name(&cfg.file);
+        ui.menu_button(format!("📂 {current}"), |ui| {
+            for p in crate::profiles::list(&dir) {
+                let selected = p == cfg.file;
+                if ui
+                    .selectable_label(selected, crate::profiles::display_name(&p))
+                    .clicked()
+                {
+                    if !selected {
+                        actions.push(Action::SwitchProfile(p));
+                    }
+                    ui.close();
+                }
+            }
+            ui.separator();
+            if ui.button(tr("Nouveau profil…")).clicked() {
+                actions.push(Action::AskNewProfile);
+                ui.close();
+            }
+        })
+        .response
+        .on_hover_text(tr("Profil : fichier de raccourcis utilisé"));
     }
 
     /// Barre des favoris : icônes (ou initiales) cliquables.
     pub(super) fn favorites_bar(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
         let favorites = Self::favorites(cfg);
-        if favorites.is_empty() {
+        let groups = cfg.favorite_groups();
+        if favorites.is_empty() && groups.is_empty() {
             return;
         }
         ui.add_space(2.0);
@@ -189,7 +238,77 @@ impl PLaunchApp {
                     }
                 });
             }
+            // Groupes épinglés : menu déroulant de leur contenu.
+            for g in &groups {
+                let Some(el) = cfg.item(g) else { continue };
+                let label = format!("📁 {} ▾", config::display_name(el));
+                let resp = ui
+                    .menu_button(label, |ui| {
+                        if ui.button(tr("▶ Tout lancer")).clicked() {
+                            actions.push(Action::LaunchGroup {
+                                path: g.clone(),
+                                confirmed: false,
+                            });
+                            ui.close();
+                        }
+                        ui.separator();
+                        self.group_menu(ui, cfg, el, g, actions);
+                    })
+                    .response;
+                resp.context_menu(|ui| {
+                    if ui.button(tr("Retirer de la barre")).clicked() {
+                        actions.push(Action::ToggleGroupFavorite(g.clone()));
+                        ui.close();
+                    }
+                });
+            }
         });
+    }
+
+    /// Contenu d'un groupe en menus imbriqués (barre des favoris).
+    fn group_menu(
+        &self,
+        ui: &mut egui::Ui,
+        cfg: &Config,
+        el: &Element,
+        path: &[usize],
+        actions: &mut Vec<Action>,
+    ) {
+        if !el
+            .children
+            .iter()
+            .any(|c| c.name == "file" || c.name == "files")
+        {
+            ui.weak(tr("(vide)"));
+            return;
+        }
+        for (i, c) in el.children.iter().enumerate() {
+            let mut p = path.to_vec();
+            p.push(i);
+            match c.name.as_str() {
+                "files" => {
+                    ui.menu_button(format!("📁 {}", config::display_name(c)), |ui| {
+                        self.group_menu(ui, cfg, c, &p, actions);
+                    });
+                }
+                "file" => {
+                    let target = cfg.resolve(c);
+                    let name = config::display_name(c);
+                    let button = match self.textures.get(&target) {
+                        Some(tex) => egui::Button::image_and_text(icon_image(tex, 16.0), name),
+                        None => egui::Button::new(name),
+                    };
+                    if ui.add(button).clicked() {
+                        actions.push(Action::Launch(p));
+                        ui.close();
+                    }
+                }
+                "separator" => {
+                    ui.separator();
+                }
+                _ => {}
+            }
+        }
     }
 
     pub(super) fn central(&self, ui: &mut egui::Ui, cfg: Option<&Config>) -> Vec<Action> {
@@ -207,7 +326,10 @@ impl PLaunchApp {
             .keys()
             .cloned()
             .collect();
+        let usage = self.shared.usage.lock().unwrap().clone();
         let rows = Rows {
+            cfg,
+            usage: &usage,
             multi: &self.multi,
             running: &running,
             selected: &self.selected,

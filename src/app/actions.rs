@@ -65,6 +65,65 @@ impl PLaunchApp {
                     self.dialog = Some(Dialog::ConfirmDeleteMany(paths));
                 }
             }
+            Action::SwitchProfile(p) => {
+                if !p.is_file() {
+                    return;
+                }
+                self.flush_notes();
+                crate::monitor::save_usage(&self.shared);
+                self.requested_file = Some(p.clone());
+                self.open(&p);
+                self.settings.last_profile =
+                    p.file_name().map(|n| n.to_string_lossy().into_owned());
+                self.persist_settings();
+                self.shared
+                    .set_status(trf("Profil : {}", &[&crate::profiles::display_name(&p)]));
+            }
+            Action::AskNewProfile => {
+                self.dialog = Some(Dialog::NewProfile {
+                    name: String::new(),
+                    error: None,
+                });
+            }
+            Action::NewProfile(name) => {
+                let dir = self
+                    .config_file()
+                    .and_then(|f| f.parent().map(Path::to_path_buf))
+                    .unwrap_or_default();
+                let Some(file) = crate::profiles::file_for(&dir, &name) else {
+                    if let Some(Dialog::NewProfile { error, .. }) = &mut self.dialog {
+                        *error = Some(tr("Le nom est obligatoire.").into());
+                    }
+                    return;
+                };
+                if let Err(e) = Config::create_empty(&file) {
+                    if let Some(Dialog::NewProfile { error, .. }) = &mut self.dialog {
+                        *error = Some(e);
+                    }
+                    return;
+                }
+                self.dialog = None;
+                crate::log::info(&format!("nouveau profil : {}", file.display()));
+                self.apply(Action::SwitchProfile(file));
+            }
+            Action::ToggleGroupFavorite(p) => {
+                let on = self.shared.modify(|c| {
+                    let el = c.item(&p).ok_or(tr("élément introuvable"))?;
+                    let on = !el
+                        .attr("favorite")
+                        .is_some_and(|v| config::favorite_value(v).0);
+                    edit::set_group_favorite(c, &p, on)?;
+                    Ok(on)
+                });
+                if let Some(on) = on {
+                    self.shared.set_status(if on {
+                        tr("Groupe épinglé dans la barre")
+                    } else {
+                        tr("Groupe retiré de la barre")
+                    });
+                }
+            }
+            Action::DismissDriveWarnings => self.drive_warnings.clear(),
             Action::Rollback => match update::rollback() {
                 Ok(v) => {
                     self.shared

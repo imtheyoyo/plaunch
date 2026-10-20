@@ -89,6 +89,8 @@ pub struct Settings {
     pub reuse_running: bool,
     /// Mesurer le temps d'utilisation des programmes.
     pub track_usage: bool,
+    /// Dernier profil ouvert (nom de fichier, dans ce dossier).
+    pub last_profile: Option<String>,
 }
 
 impl Default for Settings {
@@ -117,6 +119,7 @@ impl Default for Settings {
             scan_ignored: Vec::new(),
             reuse_running: true,
             track_usage: true,
+            last_profile: None,
         }
     }
 }
@@ -171,6 +174,9 @@ impl Settings {
              # Mesurer le temps d'utilisation des programmes (plaunch-usage.txt).\r\n\
              track_usage={}\r\n\
              \r\n\
+             # Dernier profil ouvert (PLaunch.xml, PLaunch-Travail.xml…).\r\n\
+             last_profile={}\r\n\
+             \r\n\
              # Langue de l'interface : {}.\r\n\
              language={}\r\n\
              \r\n\
@@ -203,6 +209,7 @@ impl Settings {
             self.scan_ignored.join("|"),
             self.reuse_running,
             self.track_usage,
+            self.last_profile.as_deref().unwrap_or(""),
             join(Language::ALL.iter().map(|l| l.key()).collect()),
             self.language.key(),
             join(Theme::ALL.iter().map(|l| l.key()).collect()),
@@ -322,6 +329,7 @@ pub fn parse(text: &str) -> Settings {
             "scan_on_start" => s.scan_on_start = boolean(value, s.scan_on_start),
             "reuse_running" => s.reuse_running = boolean(value, s.reuse_running),
             "track_usage" => s.track_usage = boolean(value, s.track_usage),
+            "last_profile" => s.last_profile = (!value.is_empty()).then(|| value.to_string()),
             "scan_ignored" => {
                 s.scan_ignored = value
                     .split('|')
@@ -397,6 +405,7 @@ mod tests {
             scan_on_start: true,
             reuse_running: false,
             track_usage: false,
+            last_profile: Some("PLaunch-Travail.xml".into()),
             scan_ignored: vec!["E:\\A\\a.exe".into(), "E:\\B\\b.exe".into()],
             ..Default::default()
         };

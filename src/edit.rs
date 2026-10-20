@@ -178,6 +178,19 @@ pub fn set_group_icon(cfg: &mut Config, path: &[usize], icon: Option<&str>) -> R
     Ok(())
 }
 
+/// Épingle ou désépingle un groupe dans la barre des favoris.
+pub fn set_group_favorite(cfg: &mut Config, path: &[usize], on: bool) -> Result<(), String> {
+    let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
+    if el.name != "files" {
+        return Err(tr("élément introuvable").into());
+    }
+    el.attrs.retain(|(k, _)| k != "favorite");
+    if on {
+        el.attrs.push(("favorite".into(), "True".into()));
+    }
+    Ok(())
+}
+
 /// Raccourcis directement contenus dans un groupe (lancement groupé).
 pub fn group_entries(cfg: &Config, path: &[usize]) -> Vec<ItemPath> {
     let Some(el) = cfg.item(path) else {
@@ -707,6 +720,19 @@ mod tests {
         assert_eq!(names(&c, &[2]), ["Musique"]);
         // Un groupe ne peut pas aller dans lui-même : ignoré.
         assert_eq!(move_many(&mut c, vec![vec![2]], &[2]).unwrap(), 0);
+    }
+
+    #[test]
+    fn group_favorites() {
+        let mut c = cfg();
+        set_group_favorite(&mut c, &[1, 1], true).unwrap(); // Musique › Tags
+        assert_eq!(c.favorite_groups(), vec![vec![1, 1]]);
+        assert!(c
+            .to_xml()
+            .contains("<files name=\"Tags\" favorite=\"True\">"));
+        set_group_favorite(&mut c, &[1, 1], false).unwrap();
+        assert!(c.favorite_groups().is_empty());
+        assert!(set_group_favorite(&mut c, &[4], true).is_err());
     }
 
     #[test]

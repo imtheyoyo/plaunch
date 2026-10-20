@@ -135,6 +135,11 @@ impl PLaunchApp {
                 self.selected = None;
                 self.dialog = None;
                 self.check_drive();
+                let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+                self.drive_warnings = crate::drivecheck::check(&dir);
+                for w in &self.drive_warnings {
+                    crate::log::error(w);
+                }
             }
             Err(e) => self.load_error = Some(e),
         }

@@ -376,6 +376,27 @@ impl Config {
         favs
     }
 
+    /// Groupes épinglés dans la barre des favoris (attribut `favorite`).
+    pub fn favorite_groups(&self) -> Vec<ItemPath> {
+        fn walk(el: &Element, path: &mut ItemPath, out: &mut Vec<ItemPath>) {
+            for (i, c) in el.children.iter().enumerate() {
+                if c.name == "files" {
+                    path.push(i);
+                    if c.attr("favorite").is_some_and(|v| favorite_value(v).0) {
+                        out.push(path.clone());
+                    }
+                    walk(c, path, out);
+                    path.pop();
+                }
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(files) = self.files() {
+            walk(files, &mut Vec::new(), &mut out);
+        }
+        out
+    }
+
     /// Option booléenne `True`/`False` de PLaunch.
     pub fn flag(&self, path: &[&str]) -> Option<bool> {
         self.root
