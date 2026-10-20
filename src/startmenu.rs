@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn scans_a_tree() {
-        let dir = std::env::temp_dir().join(format!("pstart-sm-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("plaunch-sm-{}", std::process::id()));
         let sub = dir.join(PROGRAMS.replace('\\', "/")).join("Outils");
         fs::create_dir_all(&sub).unwrap();
         fs::write(sub.join("Notepad++.lnk"), b"").unwrap();

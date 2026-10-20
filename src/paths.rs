@@ -1,16 +1,16 @@
-//! Résolution des chemins à la manière de PStart.
+//! Résolution des chemins à la manière de PLaunch.
 //!
-//! Les chemins d'un `PStart.xml` peuvent être :
-//! - relatifs au dossier de PStart : `_HD\mkvtoolnix\mkvtoolnix-gui.exe`,
+//! Les chemins d'un `PLaunch.xml` peuvent être :
+//! - relatifs au dossier de PLaunch : `_HD\mkvtoolnix\mkvtoolnix-gui.exe`,
 //!   `..\PortableApps\qBittorrentPortable\qBittorrentPortable.exe` ;
-//! - relatifs à la racine du lecteur de PStart : `\Outils\x.exe` ;
+//! - relatifs à la racine du lecteur de PLaunch : `\Outils\x.exe` ;
 //! - absolus : `C:\Program Files (x86)\PowerISO\PowerISO.exe` ;
 //! - UNC : `\\SERVEURNAS\Disque_DATA_1\_BDZ\ComicRack\ComicRack.exe`.
 //!
 //! Le calcul se fait sur des chaînes au format Windows pour que le
 //! comportement soit identique (et testable) sur toutes les plateformes.
 
-/// Résout `raw` par rapport au dossier `base` (dossier du fichier PStart.xml).
+/// Résout `raw` par rapport au dossier `base` (dossier du fichier PLaunch.xml).
 pub fn resolve(raw: &str, base: &str) -> String {
     if is_url(raw) {
         return raw.trim().to_string();
@@ -46,7 +46,7 @@ pub fn is_url(s: &str) -> bool {
     })
 }
 
-/// Variables propres à PStart-rs : `%PSTART%` (dossier de PStart.xml) et
+/// Variables propres à PLaunch : `%PLAUNCH%` (dossier de PLaunch.xml) et
 /// `%DRIVE%` (son lecteur, ex. `E:`). Insensibles à la casse.
 pub fn expand_vars(raw: &str, base: &str) -> String {
     if !raw.contains('%') {
@@ -56,7 +56,7 @@ pub fn expand_vars(raw: &str, base: &str) -> String {
     let drive = prefix_of(&base).unwrap_or_default();
     let mut out = raw.to_string();
     for (var, value) in [
-        ("%PSTART%", base.trim_end_matches('\\').to_string()),
+        ("%PLAUNCH%", base.trim_end_matches('\\').to_string()),
         ("%DRIVE%", drive),
     ] {
         while let Some(i) = out.to_ascii_uppercase().find(var) {
@@ -237,7 +237,7 @@ mod tests {
     fn variables() {
         let base = "E:\\Portable";
         assert_eq!(
-            resolve("%PSTART%\\VLC\\vlc.exe", base),
+            resolve("%PLAUNCH%\\VLC\\vlc.exe", base),
             "E:\\Portable\\VLC\\vlc.exe"
         );
         assert_eq!(resolve("%drive%\\Outils\\a.exe", base), "E:\\Outils\\a.exe");
@@ -346,9 +346,9 @@ mod tests {
 
     #[test]
     fn env_vars() {
-        std::env::set_var("PSTART_TEST_VAR", "C:\\Outils");
+        std::env::set_var("PLAUNCH_TEST_VAR", "C:\\Outils");
         assert_eq!(
-            resolve("%PSTART_TEST_VAR%\\x.exe", BASE),
+            resolve("%PLAUNCH_TEST_VAR%\\x.exe", BASE),
             "C:\\Outils\\x.exe"
         );
         assert_eq!(expand_env("100%"), "100%");

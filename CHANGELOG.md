@@ -1,8 +1,8 @@
 # Journal des modifications
 
-Toutes les versions de PStart-rs. Les fichiers à télécharger
-(`pstart-rs.exe` et, depuis la 0.7, son empreinte `pstart-rs.exe.sha256`)
-sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
+Toutes les versions de PLaunch. Les fichiers à télécharger
+(`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
+sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
 ## v0.9.0
 
@@ -20,11 +20,11 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 - **Sélection multiple** (`Ctrl+clic`, `Maj+clic`) : lancer, épingler,
   déplacer vers un groupe (ordre conservé) ou supprimer plusieurs éléments.
 - **Temps d'utilisation** par programme, mesuré en continu (onglet
-  Statistiques et panneau de détails), enregistré dans `pstart-rs-usage.txt`.
+  Statistiques et panneau de détails), enregistré dans `plaunch-usage.txt`.
 
 ## v0.8.1
 
-- **Création d'un PStart.xml** : sans fichier au lancement, l'écran d'accueil
+- **Création d'un PLaunch.xml** : sans fichier au lancement, l'écran d'accueil
   propose d'en créer un à côté de l'exécutable (ou au chemin passé en
   argument), de le créer ailleurs ou d'ouvrir un fichier existant.
 - Correctif : le panneau de détails ne devient plus trop étroit au démarrage
@@ -33,7 +33,7 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 ## v0.8.0
 
 - **Éjection de la clé corrigée** (Windows 11) : un assistant lancé depuis le
-  dossier temporaire attend la fermeture de PStart-rs puis demande à Windows
+  dossier temporaire attend la fermeture de PLaunch puis demande à Windows
   de retirer le périphérique ; un message confirme l'éjection ou indique ce
   qui la bloque.
 - **Favoris réorganisables** : glisser-déposer dans la barre ou clic droit →
@@ -52,15 +52,15 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 
 - **Mises à jour vérifiées** : empreinte SHA-256 publiée avec chaque version
   et contrôlée avant installation.
-- **Journal** `pstart-rs.log` (erreurs, lancements échoués, mises à jour,
+- **Journal** `plaunch.log` (erreurs, lancements échoués, mises à jour,
   plantages avec pile d'appels).
 - **Annuler / rétablir** (`Ctrl+Z` / `Ctrl+Y`, boutons ↶ ↷) pour toute
   modification.
-- **Rechargement automatique** de PStart.xml modifié par un autre programme.
+- **Rechargement automatique** de PLaunch.xml modifié par un autre programme.
 - **Exécutable allégé** (9,3 Mo au lieu de 16) avec **icône intégrée**.
 - **Recherche intelligente** : fautes de frappe, lettres inversées,
   initiales, accents ignorés, programmes les plus lancés en tête.
-- **Variables de chemin** `%PSTART%` et `%DRIVE%` ; bouton « Rendre les
+- **Variables de chemin** `%PLAUNCH%` et `%DRIVE%` ; bouton « Rendre les
   chemins portables ».
 - **Lancer tout un groupe**.
 - **Raccourci clavier par programme**, actif même fenêtre masquée.
@@ -73,7 +73,7 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 
 - **Options par raccourci** : paramètres, description, fenêtre normale /
   réduite / agrandie, exécuter en tant qu'administrateur, lancer au
-  démarrage de PStart-rs.
+  démarrage de PLaunch.
 - **Favoris** : barre sous la recherche, tête du menu de l'icône,
   `Ctrl+1` à `Ctrl+9`.
 - **Changement de lettre de lecteur** détecté, avec correction des chemins
@@ -81,7 +81,7 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 - **Navigation au clavier** dans l'arbre et les résultats ; **mode compact**.
 - **Rappels en notification Windows** (ou boîte de message, ou les deux).
 - **Coin actif sur tous les écrans**.
-- **Sauvegarde / restauration** de PStart.xml, des notes et des réglages
+- **Sauvegarde / restauration** de PLaunch.xml, des notes et des réglages
   (zip).
 - **Mise à jour intégrée** depuis GitHub Releases.
 - **Onglet Statistiques** : totaux, plus lancés, ancienneté, raccourcis
@@ -103,7 +103,7 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 - **Coin actif** : la fenêtre s'affiche quand la souris reste dans un coin ou
   contre un bord de l'écran.
 - **Démarrer avec Windows**.
-- **Fenêtre de réglages** (bouton ⚙) et fichier `pstart-rs.ini`.
+- **Fenêtre de réglages** (bouton ⚙) et fichier `plaunch.ini`.
 
 ## v0.3.0
 
@@ -112,7 +112,7 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 - **Glisser-déposer** pour réorganiser l'arbre et ajouter des fichiers depuis
   l'Explorateur.
 - **Recherche dans le menu Démarrer** (utilisateur et tous les utilisateurs),
-  avec « Ajouter à PStart ».
+  avec « Ajouter à PLaunch ».
 
 ## v0.2.0
 
@@ -124,8 +124,8 @@ sont dans l'onglet [Releases](https://github.com/imtheyoyo/pstart-rs/releases).
 
 ## v0.1.0
 
-- Première version : lanceur egui qui lit et réécrit sans perte les fichiers
-  `PStart.xml` de PStart.
+- Première version : lanceur egui dont les groupes et raccourcis sont
+  rangés dans `PLaunch.xml`, relu et réécrit sans perte.
 - Arborescence des groupes, recherche instantanée, vues « Plus utilisés » et
   « Récents ».
 - Lancement des programmes, documents et dossiers ; mise à jour des

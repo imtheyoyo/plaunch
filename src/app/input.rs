@@ -2,9 +2,9 @@
 
 use super::*;
 
-impl PStartApp {
+impl PLaunchApp {
     pub(super) fn handle_input(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
-        // Fichiers déposés depuis l'Explorateur : un PStart.xml est ouvert,
+        // Fichiers déposés depuis l'Explorateur : un PLaunch.xml est ouvert,
         // le reste est ajouté comme raccourcis.
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -207,8 +207,8 @@ impl PStartApp {
         let guard = self.shared.config.lock().unwrap();
         if let Some(cfg) = guard.as_ref() {
             let opts = cfg.search_options();
-            if opts.pstart {
-                if let Some(e) = pstart_hits(cfg, &q).into_iter().next() {
+            if opts.plaunch {
+                if let Some(e) = plaunch_hits(cfg, &q).into_iter().next() {
                     actions.push(Action::Launch(e.path));
                     return;
                 }

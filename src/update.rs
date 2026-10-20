@@ -1,8 +1,8 @@
 //! Mise à jour intégrée : interroge la dernière version publiée sur GitHub,
-//! télécharge `pstart-rs.exe` et remplace l'exécutable (même sur la clé USB).
+//! télécharge `plaunch.exe` et remplace l'exécutable (même sur la clé USB).
 //!
 //! Windows autorise à renommer un exécutable en cours d'exécution : l'ancien
-//! devient `pstart-rs.exe.old` (supprimé au démarrage suivant), le nouveau
+//! devient `plaunch.exe.old` (supprimé au démarrage suivant), le nouveau
 //! prend sa place, puis l'application se relance.
 
 use std::io::Read;
@@ -11,19 +11,19 @@ use std::time::Duration;
 
 use crate::i18n::{tr, trf};
 
-const API: &str = "https://api.github.com/repos/imtheyoyo/pstart-rs/releases/latest";
-pub const RELEASES_PAGE: &str = "https://github.com/imtheyoyo/pstart-rs/releases";
-const ASSET: &str = "pstart-rs.exe";
+const API: &str = "https://api.github.com/repos/imtheyoyo/plaunch/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/imtheyoyo/plaunch/releases";
+const ASSET: &str = "plaunch.exe";
 /// Variable posée lors d'une relance : la nouvelle instance attend que
 /// l'ancienne ait libéré le verrou d'instance unique.
-pub const RESTART_ENV: &str = "PSTART_RS_RESTARTED";
+pub const RESTART_ENV: &str = "PLAUNCH_RESTARTED";
 const MAX_SIZE: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
     pub version: String,
     pub url: String,
-    /// Fichier `pstart-rs.exe.sha256` publié avec la version.
+    /// Fichier `plaunch.exe.sha256` publié avec la version.
     pub checksum_url: Option<String>,
     pub page: String,
 }
@@ -73,7 +73,7 @@ fn agent() -> ureq::Agent {
     builder
         .timeout_connect(Duration::from_secs(10))
         .timeout(Duration::from_secs(120))
-        .user_agent(concat!("pstart-rs/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("plaunch/", env!("CARGO_PKG_VERSION")))
         .try_proxy_from_env(true)
         .build()
 }
@@ -296,14 +296,14 @@ mod tests {
     fn release_json() {
         let json = r#"{"tag_name":"v0.7.0","html_url":"https://example/r",
             "assets":[{"name":"autre.zip","browser_download_url":"https://x/a"},
-                      {"name":"pstart-rs.exe","browser_download_url":"https://x/p.exe"}]}"#;
+                      {"name":"plaunch.exe","browser_download_url":"https://x/p.exe"}]}"#;
         let r = parse_release(json).unwrap();
         assert_eq!(r.version, "v0.7.0");
         assert_eq!(r.url, "https://x/p.exe");
         assert_eq!(r.checksum_url, None);
         let json = r#"{"tag_name":"v0.7.0","assets":[
-            {"name":"pstart-rs.exe","browser_download_url":"https://x/p.exe"},
-            {"name":"pstart-rs.exe.sha256","browser_download_url":"https://x/p.sha"}]}"#;
+            {"name":"plaunch.exe","browser_download_url":"https://x/p.exe"},
+            {"name":"plaunch.exe.sha256","browser_download_url":"https://x/p.sha"}]}"#;
         assert_eq!(
             parse_release(json).unwrap().checksum_url.as_deref(),
             Some("https://x/p.sha")
@@ -319,7 +319,7 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-        let h = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD  pstart-rs.exe";
+        let h = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD  plaunch.exe";
         assert_eq!(
             parse_checksum(h).as_deref(),
             Some(sha256_hex(b"abc").as_str())
@@ -335,10 +335,10 @@ mod tests {
 
     #[test]
     fn rollback_swaps_back_and_forth() {
-        let dir = std::env::temp_dir().join(format!("pstart-rb-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("plaunch-rb-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("pstart-rs.exe");
+        let exe = dir.join("plaunch.exe");
         assert!(previous_version_of(&exe).is_none());
         std::fs::write(&exe, b"v1").unwrap();
         replace_exe_from(&exe, b"v2", "0.8.1").unwrap();
@@ -354,9 +354,9 @@ mod tests {
 
     #[test]
     fn swap_files() {
-        let dir = std::env::temp_dir().join(format!("pstart-upd-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("plaunch-upd-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("pstart-rs.exe");
+        let exe = dir.join("plaunch.exe");
         std::fs::write(&exe, b"ancien").unwrap();
         replace_exe(&exe, b"nouveau").unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"nouveau");

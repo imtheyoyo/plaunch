@@ -1,14 +1,14 @@
 //! Démarrage avec Windows (clé `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 //!
-//! La valeur s'appelle `PStart-rs` et ne touche pas à celle de PStart
-//! (`PegtopPStart`). Le chemin enregistré est absolu : si la clé USB change
-//! de lettre, il suffit de réactiver l'option.
+//! La valeur s'appelle `PLaunch`. Le chemin enregistré est absolu : si la clé
+//! USB change de lettre, il suffit de réactiver l'option (PLaunch le fait
+//! aussi de lui-même au démarrage).
 
 use std::path::Path;
 
-const VALUE_NAME: &str = "PStart-rs";
+const VALUE_NAME: &str = "PLaunch";
 
-/// Ligne de commande enregistrée : exécutable courant + fichier PStart.xml.
+/// Ligne de commande enregistrée : exécutable courant + fichier PLaunch.xml.
 pub fn command_line(config: Option<&Path>) -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut cmd = format!("\"{}\"", exe.display());

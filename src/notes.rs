@@ -1,5 +1,5 @@
-//! Notes avec alarmes, stockées dans `pstart-rs-notes.xml` à côté de
-//! `PStart.xml` (même format d'écriture que PStart : tabulations, CRLF,
+//! Notes avec alarmes, stockées dans `plaunch-notes.xml` à côté de
+//! `PLaunch.xml` (même format d'écriture que PLaunch : tabulations, CRLF,
 //! entités numériques).
 
 use std::fs;
@@ -10,7 +10,7 @@ use chrono::{Duration, NaiveDateTime};
 use crate::i18n::tr;
 use crate::xml::{self, Element};
 
-pub const FILE_NAME: &str = "pstart-rs-notes.xml";
+pub const FILE_NAME: &str = "plaunch-notes.xml";
 const STORE_FORMAT: &str = "%Y/%m/%d %H:%M:%S";
 /// Format de saisie dans l'interface.
 pub const INPUT_FORMAT: &str = "%Y/%m/%d %H:%M";

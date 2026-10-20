@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Cherche le fichier de configuration : argument de ligne de commande,
-/// sinon `PStart.xml` à côté de l'exécutable, sinon dans le dossier courant.
+/// sinon `PLaunch.xml` à côté de l'exécutable, sinon dans le dossier courant.
 fn find_config() -> Option<PathBuf> {
     if let Some(arg) = std::env::args_os().nth(1) {
         return Some(PathBuf::from(arg));
@@ -41,8 +41,8 @@ fn find_config() -> Option<PathBuf> {
     let candidates = [
         std::env::current_exe()
             .ok()
-            .and_then(|e| e.parent().map(|p| p.join("PStart.xml"))),
-        std::env::current_dir().ok().map(|d| d.join("PStart.xml")),
+            .and_then(|e| e.parent().map(|p| p.join("PLaunch.xml"))),
+        std::env::current_dir().ok().map(|d| d.join("PLaunch.xml")),
     ];
     candidates.into_iter().flatten().find(|p| p.is_file())
 }
@@ -73,7 +73,7 @@ fn main() -> eframe::Result {
     update::cleanup();
     eject::cleanup_helper();
     log::info(&format!(
-        "démarrage de PStart-rs {} ({})",
+        "démarrage de PLaunch {} ({})",
         env!("CARGO_PKG_VERSION"),
         std::env::current_exe()
             .map(|e| e.display().to_string())
@@ -114,8 +114,8 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "PStart-rs",
+        "PLaunch",
         options,
-        Box::new(move |cc| Ok(Box::new(app::PStartApp::new(cc, file, settings)))),
+        Box::new(move |cc| Ok(Box::new(app::PLaunchApp::new(cc, file, settings)))),
     )
 }

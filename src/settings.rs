@@ -1,6 +1,5 @@
-//! Réglages propres à PStart-rs, stockés dans `pstart-rs.ini` à côté du
-//! fichier `PStart.xml` (pour ne jamais ajouter de balises inconnues de
-//! PStart dans son propre fichier).
+//! Réglages de PLaunch, stockés dans `plaunch.ini` à côté du fichier
+//! `PLaunch.xml` (le fichier des raccourcis ne contient que les raccourcis).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +9,7 @@ use crate::hotcorner::Corner;
 use crate::i18n::{tr, Language};
 use crate::icons::{self, IconColor, IconImage, IconShape};
 
-pub const FILE_NAME: &str = "pstart-rs.ini";
+pub const FILE_NAME: &str = "plaunch.ini";
 
 /// Thème de l'interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -128,7 +127,7 @@ impl Settings {
         let corners: Vec<&str> = Corner::ALL.iter().map(|c| c.key()).collect();
         let join = |keys: Vec<&str>| keys.join(", ");
         format!(
-            "# Réglages de PStart-rs\r\n\
+            "# Réglages de PLaunch\r\n\
              #\r\n\
              # Raccourci clavier global pour afficher ou masquer la fenêtre.\r\n\
              # Exemples : Ctrl+Shift+Space, Ctrl+Alt+P, Shift+Super+S. Laisser vide pour désactiver.\r\n\
@@ -169,7 +168,7 @@ impl Settings {
              \r\n\
              # Programme déjà ouvert : ramener sa fenêtre au lieu d'en ouvrir une autre.\r\n\
              reuse_running={}\r\n\
-             # Mesurer le temps d'utilisation des programmes (pstart-rs-usage.txt).\r\n\
+             # Mesurer le temps d'utilisation des programmes (plaunch-usage.txt).\r\n\
              track_usage={}\r\n\
              \r\n\
              # Langue de l'interface : {}.\r\n\
@@ -247,7 +246,7 @@ impl Settings {
     }
 }
 
-/// Chemin du fichier de réglages associé à un `PStart.xml`.
+/// Chemin du fichier de réglages associé à un `PLaunch.xml`.
 pub fn path_for(config_file: &Path) -> PathBuf {
     config_file
         .parent()
@@ -388,7 +387,7 @@ mod tests {
             text_size: 125,
             icon_shape: IconShape::Bolt,
             icon_color: IconColor::Purple,
-            icon_file: Some("_Icones\\pstart.ico".into()),
+            icon_file: Some("_Icones\\plaunch.ico".into()),
             hot_corner_all_screens: false,
             reminders: ReminderStyle::Both,
             compact: true,

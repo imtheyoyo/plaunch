@@ -133,7 +133,7 @@ fn notify(note: &Note, next: Option<String>, style: ReminderStyle) {
         body.push_str(&format!("\n\n{n}"));
     }
     // Une boîte par rappel, dans son propre thread : elle ne bloque rien.
-    std::thread::spawn(move || imp::message_box(tr("PStart-rs · Rappel"), &body));
+    std::thread::spawn(move || imp::message_box(tr("PLaunch · Rappel"), &body));
 }
 
 #[cfg(windows)]

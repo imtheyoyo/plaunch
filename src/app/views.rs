@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl PStartApp {
+impl PLaunchApp {
     pub(super) fn top_bar(
         &mut self,
         ui: &mut egui::Ui,
@@ -308,11 +308,11 @@ impl PStartApp {
     ) {
         let opts = cfg.search_options();
         let mut any = false;
-        if opts.pstart {
-            let hits = pstart_hits(cfg, query);
+        if opts.plaunch {
+            let hits = plaunch_hits(cfg, query);
             if !hits.is_empty() {
                 any = true;
-                section(ui, "PStart", tag_color(&opts, None, ui));
+                section(ui, "PLaunch", tag_color(&opts, None, ui));
                 for e in &hits {
                     rows.flat(ui, e, true, actions);
                 }
@@ -349,9 +349,9 @@ impl PStartApp {
         let target = self.new_config_path();
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
-            ui.heading("PStart-rs");
+            ui.heading("PLaunch");
             ui.add_space(12.0);
-            ui.label(tr("Aucun fichier PStart.xml n'est ouvert."));
+            ui.label(tr("Aucun fichier PLaunch.xml n'est ouvert."));
             if let Some(e) = &self.load_error {
                 ui.add_space(6.0);
                 ui.colored_label(ui.visuals().error_fg_color, e);
@@ -360,7 +360,7 @@ impl PStartApp {
             if let Some(path) = &target {
                 if ui
                     .add(egui::Button::new(
-                        egui::RichText::new(tr("＋ Créer un nouveau PStart.xml")).strong(),
+                        egui::RichText::new(tr("＋ Créer un nouveau PLaunch.xml")).strong(),
                     ))
                     .on_hover_text(path.display().to_string())
                     .clicked()
@@ -376,15 +376,15 @@ impl PStartApp {
                 if ui.button(tr("Créer ailleurs…")).clicked() {
                     actions.push(Action::Browse(Browse::NewConfig));
                 }
-                if ui.button(tr("Ouvrir un PStart.xml…")).clicked() {
+                if ui.button(tr("Ouvrir un PLaunch.xml…")).clicked() {
                     actions.push(Action::Browse(Browse::OpenConfig));
                 }
             });
             ui.add_space(16.0);
             ui.weak(tr(
-                "Vous pouvez aussi glisser un fichier PStart.xml sur cette fenêtre,",
+                "Vous pouvez aussi glisser un fichier PLaunch.xml sur cette fenêtre,",
             ));
-            ui.weak(tr("ou placer pstart-rs.exe à côté de votre PStart.xml."));
+            ui.weak(tr("ou placer plaunch.exe à côté de votre PLaunch.xml."));
         });
     }
 
@@ -614,7 +614,7 @@ impl PStartApp {
 
 /// Raccourcis correspondant à la recherche, du plus pertinent au moins
 /// pertinent (tolérance aux fautes, initiales, usage).
-pub(super) fn pstart_hits(cfg: &Config, query: &str) -> Vec<config::FlatEntry> {
+pub(super) fn plaunch_hits(cfg: &Config, query: &str) -> Vec<config::FlatEntry> {
     let mut hits: Vec<(i32, config::FlatEntry)> = cfg
         .flatten()
         .into_iter()
@@ -689,7 +689,7 @@ pub(super) fn tag_color(
     ui: &egui::Ui,
 ) -> egui::Color32 {
     let rgb = match source {
-        None => opts.color_pstart,
+        None => opts.color_plaunch,
         Some(Source::CurrentUser) => opts.color_current_user,
         Some(Source::AllUsers) => opts.color_all_users,
     };

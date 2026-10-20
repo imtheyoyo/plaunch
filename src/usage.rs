@@ -1,5 +1,5 @@
 //! Temps d'utilisation des programmes, mesuré en observant les processus
-//! ouverts. Stocké dans `pstart-rs-usage.txt` à côté de PStart.xml
+//! ouverts. Stocké dans `plaunch-usage.txt` à côté de PLaunch.xml
 //! (« secondes<TAB>chemin du raccourci », chemin tel qu'écrit dans le
 //! fichier : il reste valable si la clé change de lettre).
 
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::i18n::trf;
 
-pub const FILE_NAME: &str = "pstart-rs-usage.txt";
+pub const FILE_NAME: &str = "plaunch-usage.txt";
 
 pub fn path_for(config_file: &Path) -> PathBuf {
     config_file
@@ -17,7 +17,7 @@ pub fn path_for(config_file: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(FILE_NAME))
 }
 
-/// Clé d'un raccourci : son chemin tel qu'écrit dans PStart.xml.
+/// Clé d'un raccourci : son chemin tel qu'écrit dans PLaunch.xml.
 pub fn key(raw_path: &str) -> String {
     raw_path.trim().replace('/', "\\").to_lowercase()
 }

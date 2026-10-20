@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn finds_programs() {
-        let root = std::env::temp_dir().join(format!("pstart-scan-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("plaunch-scan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         // Application PortableApps.com.
         let vlc = root.join("VLCPortable");

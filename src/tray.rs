@@ -142,7 +142,7 @@ fn build_menu(shared: &Shared) -> Menu {
     let menu = Menu::new();
     let _ = menu.append(&MenuItem::with_id(
         ID_SHOW,
-        tr("Afficher PStart-rs"),
+        tr("Afficher PLaunch"),
         true,
         None,
     ));
@@ -197,7 +197,7 @@ fn build_menu(shared: &Shared) -> Menu {
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id(
         ID_QUIT,
-        tr("Quitter PStart-rs"),
+        tr("Quitter PLaunch"),
         true,
         None,
     ));

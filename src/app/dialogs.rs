@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl PStartApp {
+impl PLaunchApp {
     pub(super) fn dialog_ui(
         &mut self,
         ctx: &egui::Context,
@@ -15,7 +15,7 @@ impl PStartApp {
         let Some(dialog) = &mut self.dialog else {
             return;
         };
-        let modal = egui::Modal::new(egui::Id::unique("pstart-dialog")).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("plaunch-dialog")).show(ctx, |ui| {
             // La fenêtre peut être étroite (ou le texte agrandi).
             let screen = ctx.content_rect();
             ui.set_width(460.0f32.min(screen.width() - 40.0).max(200.0));
@@ -302,7 +302,7 @@ pub(super) fn form_ui(
                         cfg!(windows),
                         egui::Checkbox::new(&mut o.admin, tr("Exécuter en tant qu'administrateur")),
                     );
-                    ui.checkbox(&mut o.autorun, tr("Lancer au démarrage de PStart-rs"));
+                    ui.checkbox(&mut o.autorun, tr("Lancer au démarrage de PLaunch"));
                     ui.checkbox(&mut o.favorite, tr("Épingler dans les favoris"));
                 });
                 ui.end_row();
@@ -313,7 +313,7 @@ pub(super) fn form_ui(
             "Les chemins sur le même lecteur sont enregistrés en relatif.",
         ));
         ui.weak(tr(
-            "Variables : %PSTART% (dossier de PStart.xml), %DRIVE% (son lecteur), %USERPROFILE%…",
+            "Variables : %PLAUNCH% (dossier de PLaunch.xml), %DRIVE% (son lecteur), %USERPROFILE%…",
         ));
     }
     if let Some(e) = &form.error {
@@ -681,7 +681,7 @@ pub(super) fn settings_ui(
             ui.horizontal(|ui| {
                 if ui
                     .button(tr("Exporter…"))
-                    .on_hover_text(tr("PStart.xml, notes et réglages dans un fichier zip"))
+                    .on_hover_text(tr("PLaunch.xml, notes et réglages dans un fichier zip"))
                     .clicked()
                 {
                     actions.push(Action::Browse(Browse::BackupExport));
@@ -700,7 +700,7 @@ pub(super) fn settings_ui(
                 if ui
                     .button(tr("Rendre les chemins portables"))
                     .on_hover_text(tr(
-                        "Les chemins absolus sur le lecteur de PStart.xml deviennent relatifs",
+                        "Les chemins absolus sur le lecteur de PLaunch.xml deviennent relatifs",
                     ))
                     .clicked()
                 {
@@ -899,7 +899,7 @@ pub(super) fn eject_ui(
             });
     }
     ui.add_space(6.0);
-    ui.weak(tr("PStart-rs se fermera, puis Windows éjectera la clé."));
+    ui.weak(tr("PLaunch se fermera, puis Windows éjectera la clé."));
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         let label = if procs.is_empty() {

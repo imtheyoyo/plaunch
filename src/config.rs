@@ -1,4 +1,4 @@
-//! Lecture et écriture d'un fichier `PStart.xml`.
+//! Lecture et écriture d'un fichier `PLaunch.xml`.
 //!
 //! Le document complet est conservé sous forme d'arbre XML générique : seules
 //! les valeurs que l'utilisateur modifie (compteurs de lancement…) changent,
@@ -13,10 +13,10 @@ use crate::xml::{self, Element};
 /// Position d'un élément dans l'arbre, en indices d'enfants depuis `<files>`.
 pub type ItemPath = Vec<usize>;
 
-/// Contenu d'un PStart.xml neuf.
+/// Contenu d'un PLaunch.xml neuf.
 pub const EMPTY_CONFIG: &str = "<start>\r\n\t<files>\r\n\t</files>\r\n\t<general>\r\n\t\t<singleclick>False</singleclick>\r\n\t</general>\r\n</start>\r\n";
 
-/// Format de date utilisé par PStart dans `<rundate>`.
+/// Format de date utilisé par PLaunch dans `<rundate>`.
 pub const DATE_FORMAT: &str = "%Y/%m/%d %H:%M:%S";
 
 pub struct Config {
@@ -87,9 +87,8 @@ impl WindowState {
     }
 }
 
-/// Options d'un raccourci. `parameters`, `description`, `windowstate` et
-/// `autorun` sont des balises de PStart ; `runasadmin` et `favorite` sont
-/// propres à PStart-rs.
+/// Options d'un raccourci (balises `parameters`, `description`,
+/// `windowstate`, `autorun`, `runasadmin`, `favorite` et `globalhotkey`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EntryOptions {
     pub parameters: String,
@@ -200,7 +199,7 @@ pub fn set_entry_options(el: &mut Element, o: &EntryOptions) {
 }
 
 impl Config {
-    /// Crée un fichier PStart.xml vide (format de PStart), sans écraser un
+    /// Crée un fichier PLaunch.xml vide (format de PLaunch), sans écraser un
     /// fichier existant.
     pub fn create_empty(file: &Path) -> Result<(), String> {
         if file.exists() {
@@ -222,7 +221,7 @@ impl Config {
         let root = xml::parse(&text).map_err(|e| format!("{} : {e}", file.display()))?;
         if root.name != "start" {
             return Err(format!(
-                "{} n'est pas un fichier PStart (racine <{}>)",
+                "{} n'est pas un fichier PLaunch (racine <{}>)",
                 file.display(),
                 root.name
             ));
@@ -258,7 +257,7 @@ impl Config {
     }
 
     /// Enregistre le fichier. Au premier enregistrement de la session, une
-    /// copie de l'original est conservée dans `PStart.xml.bak`.
+    /// copie de l'original est conservée dans `PLaunch.xml.bak`.
     pub fn save(&mut self) -> Result<(), String> {
         let data = self.to_xml();
         if !self.backed_up && self.file.exists() {
@@ -377,7 +376,7 @@ impl Config {
         favs
     }
 
-    /// Option booléenne `True`/`False` de PStart.
+    /// Option booléenne `True`/`False` de PLaunch.
     pub fn flag(&self, path: &[&str]) -> Option<bool> {
         self.root
             .get(path)
@@ -393,14 +392,14 @@ impl Config {
         self.flag(&["general", "singleclick"]).unwrap_or(false)
     }
 
-    /// Taille de fenêtre mémorisée par PStart.
+    /// Taille de fenêtre mémorisée par PLaunch.
     pub fn window_size(&self) -> Option<[f32; 2]> {
         let w = self.number(&["window", "main", "size", "x"])?;
         let h = self.number(&["window", "main", "size", "y"])?;
         (w > 100 && h > 100).then_some([w as f32, h as f32])
     }
 
-    /// Options de recherche de PStart (`<search>`).
+    /// Options de recherche de PLaunch (`<search>`).
     pub fn search_options(&self) -> SearchOptions {
         let color = |name: &str| {
             self.root
@@ -408,13 +407,13 @@ impl Config {
                 .and_then(|e| parse_color(&e.text))
         };
         SearchOptions {
-            pstart: self.flag(&["search", "pstart"]).unwrap_or(true),
+            plaunch: self.flag(&["search", "plaunch"]).unwrap_or(true),
             current_user: self
                 .flag(&["search", "currentuserstartmenu"])
                 .unwrap_or(true),
             all_users: self.flag(&["search", "allusersstartmenu"]).unwrap_or(true),
             colorize: self.flag(&["search", "colorize"]).unwrap_or(true),
-            color_pstart: color("pstart"),
+            color_plaunch: color("plaunch"),
             color_current_user: color("currentuserstartmenu"),
             color_all_users: color("allusersstartmenu"),
         }
@@ -423,11 +422,11 @@ impl Config {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchOptions {
-    pub pstart: bool,
+    pub plaunch: bool,
     pub current_user: bool,
     pub all_users: bool,
     pub colorize: bool,
-    pub color_pstart: Option<[u8; 3]>,
+    pub color_plaunch: Option<[u8; 3]>,
     pub color_current_user: Option<[u8; 3]>,
     pub color_all_users: Option<[u8; 3]>,
 }
@@ -437,7 +436,7 @@ pub fn format_color([r, g, b]: [u8; 3]) -> String {
     format!("{b:02X}{g:02X}{r:02X}h")
 }
 
-/// Palette de couleurs de PStart (`<colors>`), dans l'ordre du fichier.
+/// Palette de couleurs de PLaunch (`<colors>`), dans l'ordre du fichier.
 impl Config {
     pub fn palette(&self) -> Vec<[u8; 3]> {
         let mut out: Vec<[u8; 3]> = self
@@ -450,7 +449,7 @@ impl Config {
                     .collect()
             })
             .unwrap_or_default();
-        // Complète avec les couleurs par défaut de PStart.
+        // Complète avec les couleurs par défaut de PLaunch.
         for c in ["A0FFFFh", "A0FFA0h", "FFA0A0h", "A0C0FFh", "A0A0FFh"] {
             if out.len() >= 5 {
                 break;
@@ -503,7 +502,7 @@ pub fn runcount(el: &Element) -> u32 {
 }
 
 /// Met à jour `<runcount>` et `<rundate>` après un lancement, en respectant
-/// l'ordre des balises de PStart (`path`, `directory`, …, `runcount`, `rundate`).
+/// l'ordre des balises de PLaunch (`path`, `directory`, …, `runcount`, `rundate`).
 pub fn record_run(el: &mut Element, now: &str) {
     let count = runcount(el) + 1;
     set_child(el, "runcount", &count.to_string(), &["rundate"]);
@@ -583,21 +582,21 @@ mod tests {
 
     #[test]
     fn new_empty_file() {
-        let dir = std::env::temp_dir().join(format!("pstart-new-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("plaunch-new-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let file = dir.join("sous-dossier").join("PStart.xml");
+        let file = dir.join("sous-dossier").join("PLaunch.xml");
         Config::create_empty(&file).unwrap();
         let mut cfg = Config::load(&file).unwrap();
         assert!(cfg.files().unwrap().children.is_empty());
         assert!(!cfg.single_click());
-        // Relu puis réécrit à l'identique (format de PStart).
+        // Relu puis réécrit à l'identique (format de PLaunch).
         cfg.save().unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), EMPTY_CONFIG);
         assert!(Config::create_empty(&file).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 
-    const SAMPLE: &str = include_str!("../tests/fixtures/PStart.sample.xml");
+    const SAMPLE: &str = include_str!("../tests/fixtures/PLaunch.sample.xml");
 
     #[test]
     fn round_trip_is_byte_identical() {
@@ -677,7 +676,7 @@ mod tests {
         assert_eq!(cfg_palette_len(), 5);
         let cfg = Config::from_str(SAMPLE, "E:\\Portable").unwrap();
         let s = cfg.search_options();
-        assert!(s.pstart && s.current_user && s.all_users);
+        assert!(s.plaunch && s.current_user && s.all_users);
     }
 
     #[test]
@@ -689,11 +688,11 @@ mod tests {
     }
 
     /// Vérifie l'aller-retour sur un vrai fichier :
-    /// `PSTART_XML=chemin\PStart.xml cargo test -- --ignored`
+    /// `PLAUNCH_XML=chemin\PLaunch.xml cargo test -- --ignored`
     #[test]
     #[ignore]
     fn round_trip_real_file() {
-        let path = std::env::var("PSTART_XML").expect("PSTART_XML non défini");
+        let path = std::env::var("PLAUNCH_XML").expect("PLAUNCH_XML non défini");
         let original = fs::read_to_string(&path).unwrap();
         let cfg = Config::load(Path::new(&path)).unwrap();
         assert_eq!(cfg.to_xml(), original);

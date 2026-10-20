@@ -24,7 +24,7 @@ jobs:
           for f in notes/*.md; do
             tag=$(basename "$f" .md)
             if gh release view "$tag" >/dev/null 2>&1; then
-              gh release edit "$tag" --notes-file "$f"
+              gh release edit "$tag" --notes-file "$f" --title "PLaunch $tag"
               echo "notes mises à jour : $tag"
             else
               echo "pas encore de release : $tag"

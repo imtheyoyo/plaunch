@@ -1,16 +1,16 @@
-//! Arbre XML minimal et *sans perte* pour les fichiers PStart.
+//! Arbre XML minimal et *sans perte* pour les fichiers PLaunch.
 //!
-//! PStart écrit un XML très régulier : pas de déclaration, des tabulations,
+//! PLaunch écrit un XML très régulier : pas de déclaration, des tabulations,
 //! des fins de ligne CRLF, aucun contenu mixte, et tous les caractères
 //! spéciaux ou non ASCII encodés en références numériques (`&#xE9;`, `&#x26;`).
 //! Ce module relit ce format dans un arbre générique et le réécrit à
-//! l'identique, de sorte que les sections que pstart-rs ne connaît pas
+//! l'identique, de sorte que les sections que plaunch ne connaît pas
 //! (notes, capteurs de souris, couleurs…) sont conservées telles quelles.
 
 use quick_xml::events::Event;
 use quick_xml::{Reader, XmlVersion};
 
-/// Un élément XML. PStart n'utilise jamais de contenu mixte : un élément a
+/// Un élément XML. PLaunch n'utilise jamais de contenu mixte : un élément a
 /// soit des enfants, soit du texte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Element {
@@ -199,7 +199,7 @@ fn attach(stack: &mut [Element], root: &mut Option<Element>, el: Element) -> Res
     }
 }
 
-/// Sérialise au format PStart (tabulations, CRLF, références numériques).
+/// Sérialise au format PLaunch (tabulations, CRLF, références numériques).
 pub fn write(root: &Element) -> String {
     let mut out = String::with_capacity(64 * 1024);
     write_element(&mut out, root, 0);
@@ -238,7 +238,7 @@ fn indent(out: &mut String, depth: usize) {
     }
 }
 
-/// Encode comme PStart : `&`, `<`, `>`, `"` et tout caractère non ASCII en
+/// Encode comme PLaunch : `&`, `<`, `>`, `"` et tout caractère non ASCII en
 /// référence hexadécimale majuscule.
 fn escape_into(out: &mut String, s: &str) {
     use std::fmt::Write;
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_like_pstart() {
+    fn escape_like_plaunch() {
         let mut s = String::new();
         escape_into(&mut s, "Audacity® & \"Création\"");
         assert_eq!(s, "Audacity&#xAE; &#x26; &#x22;Cr&#xE9;ation&#x22;");

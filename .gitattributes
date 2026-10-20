@@ -1,2 +1,2 @@
-# Les fichiers PStart utilisent CRLF : ne jamais les convertir.
+# Les fichiers PLaunch utilisent CRLF : ne jamais les convertir.
 *.xml -text

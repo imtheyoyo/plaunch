@@ -1,4 +1,4 @@
-//! Journal `pstart-rs.log`, à côté de l'exécutable (ou dans le dossier
+//! Journal `plaunch.log`, à côté de l'exécutable (ou dans le dossier
 //! temporaire si la clé est en lecture seule). Garde aussi les plantages.
 
 use std::fs::OpenOptions;
@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-pub const FILE_NAME: &str = "pstart-rs.log";
+pub const FILE_NAME: &str = "plaunch.log";
 /// Au-delà, le journal est renommé en `.log.1` (un seul ancien gardé).
 const MAX_SIZE: u64 = 512 * 1024;
 
@@ -82,7 +82,7 @@ pub fn install_panic_hook() {
         ));
         crash_box(&format!(
             "{}\n\n{payload}\n\n{}",
-            crate::i18n::tr("PStart-rs a rencontré une erreur et va se fermer."),
+            crate::i18n::tr("PLaunch a rencontré une erreur et va se fermer."),
             crate::i18n::trf("Détails dans {}", &[&path().display()])
         ));
         default(info);
@@ -92,7 +92,7 @@ pub fn install_panic_hook() {
 #[cfg(windows)]
 fn crash_box(text: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    let caption: Vec<u16> = "PStart-rs".encode_utf16().chain(Some(0)).collect();
+    let caption: Vec<u16> = "PLaunch".encode_utf16().chain(Some(0)).collect();
     let text: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
     // SAFETY : chaînes terminées par un zéro.
     unsafe {

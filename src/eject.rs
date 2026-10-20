@@ -1,16 +1,16 @@
 //! Éjection de la clé USB : repère les programmes lancés depuis le lecteur,
 //! les ferme (proprement puis, si demandé, de force) et éjecte le lecteur.
 //!
-//! PStart-rs tournant lui-même depuis la clé, l'éjection est confiée à une
+//! PLaunch tournant lui-même depuis la clé, l'éjection est confiée à une
 //! copie de l'exécutable placée dans le dossier temporaire (`--eject-helper`) :
-//! elle attend la fin de PStart-rs puis demande à Windows de retirer le
+//! elle attend la fin de PLaunch puis demande à Windows de retirer le
 //! périphérique (`CM_Request_Device_EjectW`, comme « Retirer le
 //! périphérique en toute sécurité »), et affiche le résultat.
 
 /// Argument du mode « assistant d'éjection ».
 pub const HELPER_ARG: &str = "--eject-helper";
 /// Nom de la copie temporaire.
-pub const HELPER_EXE: &str = "pstart-rs-eject.exe";
+pub const HELPER_EXE: &str = "plaunch-eject.exe";
 
 /// Programme ouvert depuis le lecteur.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,7 +128,7 @@ mod imp {
         }
     }
 
-    /// Processus dont l'exécutable est sur le lecteur (sauf PStart-rs).
+    /// Processus dont l'exécutable est sur le lecteur (sauf PLaunch).
     pub fn processes_on(drive: char) -> Vec<Proc> {
         let mut out: Vec<Proc> = all_processes()
             .into_iter()
@@ -138,7 +138,7 @@ mod imp {
         out
     }
 
-    /// Tous les processus lisibles (sauf PStart-rs), avec leur exécutable.
+    /// Tous les processus lisibles (sauf PLaunch), avec leur exécutable.
     pub fn all_processes() -> Vec<Proc> {
         let mut pids = vec![0u32; 4096];
         let mut needed = 0u32;
@@ -223,7 +223,7 @@ mod imp {
     }
 
     /// Copie l'exécutable dans le dossier temporaire et lance l'assistant
-    /// d'éjection ; PStart-rs doit ensuite se fermer.
+    /// d'éjection ; PLaunch doit ensuite se fermer.
     pub fn eject(drive: char) -> Result<(), String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let helper = std::env::temp_dir().join(super::HELPER_EXE);
@@ -241,7 +241,7 @@ mod imp {
             .map_err(|e| e.to_string())
     }
 
-    /// Mode assistant : attend la fin de PStart-rs puis éjecte.
+    /// Mode assistant : attend la fin de PLaunch puis éjecte.
     pub fn run_helper(drive: char, pid: u32) {
         crate::log::info(&format!(
             "assistant d'éjection : {drive}: (attente du processus {pid})"
@@ -277,7 +277,7 @@ mod imp {
             Ok(()) => crate::log::info(&format!("éjection de {drive}: réussie")),
             Err(e) => crate::log::error(&format!("éjection de {drive}: refusée : {e}")),
         }
-        let caption: Vec<u16> = "PStart-rs".encode_utf16().chain(Some(0)).collect();
+        let caption: Vec<u16> = "PLaunch".encode_utf16().chain(Some(0)).collect();
         let text: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
         // SAFETY : chaînes terminées par un zéro.
         unsafe {
@@ -508,7 +508,7 @@ mod tests {
             parse_helper_args(&args(&[HELPER_ARG, "e", "42"])),
             Some(('E', 42))
         );
-        assert_eq!(parse_helper_args(&args(&["PStart.xml"])), None);
+        assert_eq!(parse_helper_args(&args(&["PLaunch.xml"])), None);
         assert_eq!(parse_helper_args(&args(&[HELPER_ARG, "1", "x"])), None);
         assert!(veto_message(6, "\\Device\\Notepad2.exe").contains("Notepad2"));
         assert!(veto_message(0, "").contains("refus"));

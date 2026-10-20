@@ -2,9 +2,9 @@
 
 use super::*;
 
-impl PStartApp {
-    /// Surveille PStart.xml : une modification par un autre programme
-    /// (synchronisation, autre PC, PStart) déclenche un rechargement.
+impl PLaunchApp {
+    /// Surveille PLaunch.xml : une modification par un autre programme
+    /// (synchronisation, autre PC, PLaunch) déclenche un rechargement.
     pub(super) fn watch_file(&self) {
         let shared = self.shared.clone();
         std::thread::spawn(move || loop {
@@ -31,7 +31,7 @@ impl PStartApp {
         Some(paths::to_native(&resolved))
     }
 
-    /// Cherche les programmes absents de PStart.xml dans `dir`.
+    /// Cherche les programmes absents de PLaunch.xml dans `dir`.
     /// `quiet` : au démarrage, ne rien afficher s'il n'y a rien.
     pub(super) fn start_scan(&mut self, dir: PathBuf, quiet: bool) {
         let (known, ignored) = {
@@ -471,18 +471,18 @@ impl PStartApp {
     // ---- Application des actions --------------------------------------
 
     /// Fichier proposé à la création : celui demandé en argument s'il
-    /// n'existe pas, sinon `PStart.xml` à côté de l'exécutable.
+    /// n'existe pas, sinon `PLaunch.xml` à côté de l'exécutable.
     pub(super) fn new_config_path(&self) -> Option<PathBuf> {
         if let Some(p) = &self.requested_file {
             if !p.exists() {
                 return Some(p.clone());
             }
         }
-        let beside = std::env::current_exe().ok()?.parent()?.join("PStart.xml");
+        let beside = std::env::current_exe().ok()?.parent()?.join("PLaunch.xml");
         (!beside.exists()).then_some(beside)
     }
 
-    /// Crée un PStart.xml vide, l'ouvre et y rattache les réglages.
+    /// Crée un PLaunch.xml vide, l'ouvre et y rattache les réglages.
     pub(super) fn create_config(&mut self, path: &Path) {
         if let Err(e) = Config::create_empty(path) {
             self.shared.error(e);

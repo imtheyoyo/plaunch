@@ -1,4 +1,4 @@
-//! Sauvegarde et restauration : `PStart.xml`, les notes et les réglages dans
+//! Sauvegarde et restauration : `PLaunch.xml`, les notes et les réglages dans
 //! une seule archive zip.
 
 use std::fs::File;
@@ -10,7 +10,7 @@ use zip::write::SimpleFileOptions;
 use crate::i18n::trf;
 
 /// Noms des fichiers dans l'archive.
-pub const CONFIG: &str = "PStart.xml";
+pub const CONFIG: &str = "PLaunch.xml";
 pub const SETTINGS: &str = crate::settings::FILE_NAME;
 pub const NOTES: &str = crate::notes::FILE_NAME;
 const MAX_ENTRY: u64 = 32 * 1024 * 1024;
@@ -44,7 +44,7 @@ impl Targets {
 /// Nom proposé pour une nouvelle sauvegarde.
 pub fn default_name() -> String {
     format!(
-        "PStart-rs-{}.zip",
+        "PLaunch-{}.zip",
         chrono::Local::now().format("%Y-%m-%d_%H-%M")
     )
 }
@@ -122,10 +122,10 @@ mod tests {
 
     #[test]
     fn export_then_restore() {
-        let dir = std::env::temp_dir().join(format!("pstart-bak-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("plaunch-bak-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let t = Targets::for_config(&dir.join("PStart.xml"));
+        let t = Targets::for_config(&dir.join("PLaunch.xml"));
         std::fs::write(&t.config, "<start>\r\n</start>\r\n").unwrap();
         std::fs::write(&t.settings, "tray=false\r\n").unwrap();
         let zip = dir.join(default_name());
@@ -139,7 +139,7 @@ mod tests {
             std::fs::read_to_string(&t.config).unwrap(),
             "<start>\r\n</start>\r\n"
         );
-        let kept = dir.join("PStart.xml.avant-restauration");
+        let kept = dir.join("PLaunch.xml.avant-restauration");
         assert_eq!(std::fs::read_to_string(kept).unwrap(), "modifié");
         assert!(restore(&dir.join("absent.zip"), &t).is_err());
         let _ = std::fs::remove_dir_all(&dir);

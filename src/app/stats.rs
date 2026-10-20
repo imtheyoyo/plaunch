@@ -3,7 +3,7 @@
 
 use eframe::egui;
 
-use super::{Action, PStartApp};
+use super::{Action, PLaunchApp};
 use crate::config::{self, Config, FlatEntry};
 use crate::i18n::{tr, trf};
 use crate::xml::Element;
@@ -45,7 +45,7 @@ fn count_groups(el: &Element) -> usize {
         .sum()
 }
 
-impl PStartApp {
+impl PLaunchApp {
     pub(super) fn stats_view(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
         let entries = cfg.flatten();
         let total: u64 = entries.iter().map(|e| e.runcount as u64).sum();
@@ -76,7 +76,7 @@ impl PStartApp {
                 ui.strong(total.to_string());
                 ui.end_row();
                 if let Some(n) = cfg.number(&["execution", "count"]) {
-                    ui.label(tr("Démarrages de PStart"));
+                    ui.label(tr("Démarrages de PLaunch"));
                     ui.strong(n.to_string());
                     ui.end_row();
                 }
@@ -156,7 +156,7 @@ impl PStartApp {
             if !dead.is_empty()
                 && ui
                     .button(tr("Tout supprimer…"))
-                    .on_hover_text(tr("Retire ces raccourcis de PStart.xml"))
+                    .on_hover_text(tr("Retire ces raccourcis de PLaunch.xml"))
                     .clicked()
             {
                 actions.push(Action::AskCleanup(

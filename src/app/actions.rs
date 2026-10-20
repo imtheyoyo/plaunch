@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl PStartApp {
+impl PLaunchApp {
     pub(super) fn apply(&mut self, action: Action) {
         match action {
             Action::Select(p) => {
@@ -473,7 +473,7 @@ impl PStartApp {
     pub(super) fn ask_eject(&mut self) {
         let Some(drive) = self.shared.eject_drive() else {
             self.shared
-                .set_status(tr("Le lecteur de PStart-rs ne peut pas être éjecté"));
+                .set_status(tr("Le lecteur de PLaunch ne peut pas être éjecté"));
             return;
         };
         self.flush_notes();
@@ -544,7 +544,7 @@ impl PStartApp {
                 match eject::eject(drive) {
                     Ok(()) => {
                         self.flush_notes();
-                        crate::log::info("éjection lancée, fermeture de PStart-rs");
+                        crate::log::info("éjection lancée, fermeture de PLaunch");
                         tray::quit(&self.shared);
                     }
                     Err(e) => self.shared.error(e),
@@ -760,10 +760,10 @@ impl PStartApp {
                     .and_then(|e| e.parent().map(Path::to_path_buf))
                     .unwrap_or_default();
                 let picked = rfd::FileDialog::new()
-                    .set_title(tr("Créer un nouveau PStart.xml"))
+                    .set_title(tr("Créer un nouveau PLaunch.xml"))
                     .set_directory(&dir)
-                    .set_file_name("PStart.xml")
-                    .add_filter("PStart", &["xml"])
+                    .set_file_name("PLaunch.xml")
+                    .add_filter("PLaunch", &["xml"])
                     .save_file();
                 if let Some(p) = picked {
                     self.create_config(&p);
@@ -775,9 +775,9 @@ impl PStartApp {
                     .and_then(|e| e.parent().map(Path::to_path_buf))
                     .unwrap_or_default();
                 let picked = rfd::FileDialog::new()
-                    .set_title(tr("Ouvrir un PStart.xml…"))
+                    .set_title(tr("Ouvrir un PLaunch.xml…"))
                     .set_directory(&dir)
-                    .add_filter("PStart", &["xml"])
+                    .add_filter("PLaunch", &["xml"])
                     .pick_file();
                 if let Some(p) = picked {
                     if self.settings_path.is_none() {

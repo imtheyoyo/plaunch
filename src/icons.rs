@@ -560,13 +560,13 @@ mod tests {
         assert_eq!(IconShape::from_key("?"), IconShape::Play);
     }
 
-    /// Régénère `assets/pstart-rs.256.rgba` (puis le .ico avec
+    /// Régénère `assets/plaunch.256.rgba` (puis le .ico avec
     /// `python3 assets/make_ico.py`) : `cargo test -- --ignored ico_source`.
     #[test]
     #[ignore]
     fn ico_source() {
         let img = render_icon(IconShape::Play, IconColor::Blue, 256);
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/pstart-rs.256.rgba");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/plaunch.256.rgba");
         std::fs::write(path, &img.rgba).unwrap();
     }
 

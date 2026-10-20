@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn accounting() {
         let cfg = Config::from_str(
-            include_str!("../tests/fixtures/PStart.sample.xml"),
+            include_str!("../tests/fixtures/PLaunch.sample.xml"),
             "E:\\Portable",
         )
         .unwrap();

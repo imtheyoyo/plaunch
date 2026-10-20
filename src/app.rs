@@ -296,7 +296,7 @@ enum Dialog {
 
 type Textures = HashMap<String, egui::TextureHandle>;
 
-pub struct PStartApp {
+pub struct PLaunchApp {
     shared: Arc<Shared>,
     settings: Settings,
     load_error: Option<String>,
@@ -338,7 +338,7 @@ pub struct PStartApp {
     multi: Vec<ItemPath>,
 }
 
-impl PStartApp {
+impl PLaunchApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         file: Option<PathBuf>,
@@ -366,7 +366,7 @@ impl PStartApp {
             .store(settings.track_usage, Ordering::SeqCst);
 
         let (exists_tx, exists_rx) = mpsc::channel();
-        let mut app = PStartApp {
+        let mut app = PLaunchApp {
             shared,
             settings,
             load_error: None,
@@ -449,7 +449,7 @@ impl PStartApp {
     }
 }
 
-impl eframe::App for PStartApp {
+impl eframe::App for PLaunchApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_existence();
@@ -488,18 +488,18 @@ impl eframe::App for PStartApp {
         if self.shared.ask_eject.swap(false, Ordering::SeqCst) {
             self.ask_eject();
         }
-        // PStart.xml modifié ailleurs : rechargement (pas pendant une saisie).
+        // PLaunch.xml modifié ailleurs : rechargement (pas pendant une saisie).
         let editing = matches!(
             self.dialog,
             Some(Dialog::Form(_)) | Some(Dialog::Settings(_))
         );
         if !editing && self.shared.file_changed.swap(false, Ordering::SeqCst) {
-            crate::log::info("PStart.xml modifié par un autre programme : rechargement");
+            crate::log::info("PLaunch.xml modifié par un autre programme : rechargement");
             let selected = self.selected.clone();
             self.reload();
             self.selected = selected;
             self.shared
-                .set_status(tr("PStart.xml modifié par un autre programme : rechargé"));
+                .set_status(tr("PLaunch.xml modifié par un autre programme : rechargé"));
         }
         // Mise à jour installée : relance puis fermeture.
         if *self.shared.update.lock().unwrap() == update::State::Installed {

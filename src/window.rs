@@ -12,7 +12,7 @@ static HWND: AtomicIsize = AtomicIsize::new(0);
 // Titre distinctif : sert aussi à retrouver la fenêtre (instance unique),
 // il ne doit pas pouvoir correspondre à un dossier ouvert dans l'Explorateur.
 // Le titre est traduit : l'instance unique cherche les deux variantes.
-pub const TITLE: &str = "PStart-rs · Lanceur portable";
+pub const TITLE: &str = "PLaunch · Lanceur portable";
 
 /// Titre dans la langue de l'interface.
 pub fn title() -> &'static str {

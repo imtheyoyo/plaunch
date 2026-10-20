@@ -11,7 +11,7 @@ use std::fmt::{Display, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
-/// Choix de l'utilisateur (`language=` dans pstart-rs.ini).
+/// Choix de l'utilisateur (`language=` dans plaunch.ini).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Language {
     #[default]
@@ -150,10 +150,7 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
 /// Français → anglais.
 const EN: &[(&str, &str)] = &[
     // Fenêtre et barre du haut
-    (
-        "PStart-rs · Lanceur portable",
-        "PStart-rs · Portable launcher",
-    ),
+    ("PLaunch · Lanceur portable", "PLaunch · Portable launcher"),
     ("Rechercher… (Ctrl+F)", "Search… (Ctrl+F)"),
     ("Arborescence", "Tree"),
     ("Plus utilisés", "Most used"),
@@ -241,16 +238,16 @@ const EN: &[(&str, &str)] = &[
     ("Rappel : {}", "Reminder: {}"),
     ("Note", "Note"),
     ("Prochain rappel : {}", "Next reminder: {}"),
-    ("PStart-rs · Rappel", "PStart-rs · Reminder"),
+    ("PLaunch · Rappel", "PLaunch · Reminder"),
     // Recherche, accueil, détails
     ("Aucun résultat.", "No results."),
     (
-        "Glissez un fichier PStart.xml sur cette fenêtre,",
-        "Drop a PStart.xml file on this window,",
+        "Glissez un fichier PLaunch.xml sur cette fenêtre,",
+        "Drop a PLaunch.xml file on this window,",
     ),
     (
-        "ou placez pstart-rs.exe à côté de votre PStart.xml.",
-        "or put pstart-rs.exe next to your PStart.xml.",
+        "ou placez plaunch.exe à côté de votre PLaunch.xml.",
+        "or put plaunch.exe next to your PLaunch.xml.",
     ),
     ("Sélectionnez un raccourci.", "Select a shortcut."),
     ("{} raccourcis", "{} shortcuts"),
@@ -299,7 +296,7 @@ const EN: &[(&str, &str)] = &[
     ("Cible introuvable", "Target not found"),
     ("Lancer", "Launch"),
     ("Ouvrir l'emplacement", "Open location"),
-    ("Ajouter à PStart", "Add to PStart"),
+    ("Ajouter à PLaunch", "Add to PLaunch"),
     ("Menu Démarrer (utilisateur)", "Start menu (user)"),
     ("Menu Démarrer (tous)", "Start menu (all users)"),
     // Réglages
@@ -363,10 +360,10 @@ const EN: &[(&str, &str)] = &[
     ("bord gauche", "left edge"),
     ("bord droit", "right edge"),
     // Zone de notification
-    ("Afficher PStart-rs", "Show PStart-rs"),
+    ("Afficher PLaunch", "Show PLaunch"),
     ("(vide)", "(empty)"),
     ("Notes…", "Notes…"),
-    ("Quitter PStart-rs", "Quit PStart-rs"),
+    ("Quitter PLaunch", "Quit PLaunch"),
     (
         "Démarrage avec Windows activé",
         "Start with Windows enabled",
@@ -388,7 +385,7 @@ const EN: &[(&str, &str)] = &[
         "Ctrl+1 to 9: launch a favorite",
     ),
     ("Dernier lancement", "Last launch"),
-    ("Démarrages de PStart", "PStart starts"),
+    ("Démarrages de PLaunch", "PLaunch starts"),
     (
         "Flèches : naviguer, ouvrir ou fermer un groupe",
         "Arrows: move, open or close a group",
@@ -398,14 +395,14 @@ const EN: &[(&str, &str)] = &[
     ("Jamais lancés ({})", "Never launched ({})"),
     ("Lancements enregistrés", "Recorded launches"),
     (
-        "Lancer au démarrage de PStart-rs",
-        "Launch when PStart-rs starts",
+        "Lancer au démarrage de PLaunch",
+        "Launch when PLaunch starts",
     ),
     ("Les plus lancés", "Most launched"),
     ("Raccourcis introuvables", "Missing shortcuts"),
     (
-        "Retire ces raccourcis de PStart.xml",
-        "Removes these shortcuts from PStart.xml",
+        "Retire ces raccourcis de PLaunch.xml",
+        "Removes these shortcuts from PLaunch.xml",
     ),
     ("Retirer des favoris", "Remove from favorites"),
     (
@@ -466,8 +463,8 @@ const EN: &[(&str, &str)] = &[
     ("Options", "Options"),
     ("Outils", "Tools"),
     (
-        "PStart.xml, notes et réglages dans un fichier zip",
-        "PStart.xml, notes and settings in a zip file",
+        "PLaunch.xml, notes et réglages dans un fichier zip",
+        "PLaunch.xml, notes and settings in a zip file",
     ),
     ("Paramètres", "Parameters"),
     (
@@ -576,12 +573,12 @@ const EN: &[(&str, &str)] = &[
         "Launch the {} programs of group “{}”?",
     ),
     (
-        "Le lecteur de PStart-rs ne peut pas être éjecté",
-        "PStart-rs's drive cannot be ejected",
+        "Le lecteur de PLaunch ne peut pas être éjecté",
+        "PLaunch's drive cannot be ejected",
     ),
     (
-        "Les chemins absolus sur le lecteur de PStart.xml deviennent relatifs",
-        "Absolute paths on PStart.xml's drive become relative",
+        "Les chemins absolus sur le lecteur de PLaunch.xml deviennent relatifs",
+        "Absolute paths on PLaunch.xml's drive become relative",
     ),
     (
         "Les modifications non enregistrées seront perdues",
@@ -602,16 +599,16 @@ const EN: &[(&str, &str)] = &[
     ),
     ("Ouvrir le journal", "Open log"),
     (
-        "PStart-rs a rencontré une erreur et va se fermer.",
-        "PStart-rs ran into an error and will close.",
+        "PLaunch a rencontré une erreur et va se fermer.",
+        "PLaunch ran into an error and will close.",
     ),
     (
-        "PStart-rs se fermera, puis Windows éjectera la clé.",
-        "PStart-rs will close, then Windows will eject the drive.",
+        "PLaunch se fermera, puis Windows éjectera la clé.",
+        "PLaunch will close, then Windows will eject the drive.",
     ),
     (
-        "PStart.xml modifié par un autre programme : rechargé",
-        "PStart.xml changed by another program: reloaded",
+        "PLaunch.xml modifié par un autre programme : rechargé",
+        "PLaunch.xml changed by another program: reloaded",
     ),
     ("Plus tard", "Later"),
     (
@@ -643,8 +640,8 @@ const EN: &[(&str, &str)] = &[
         "One group per category (or folder)",
     ),
     (
-        "Variables : %PSTART% (dossier de PStart.xml), %DRIVE% (son lecteur), %USERPROFILE%…",
-        "Variables: %PSTART% (PStart.xml folder), %DRIVE% (its drive), %USERPROFILE%…",
+        "Variables : %PLAUNCH% (dossier de PLaunch.xml), %DRIVE% (son lecteur), %USERPROFILE%…",
+        "Variables: %PLAUNCH% (PLaunch.xml folder), %DRIVE% (its drive), %USERPROFILE%…",
     ),
     (
         "empreinte SHA-256 incorrecte : mise à jour refusée",
@@ -676,24 +673,24 @@ const EN: &[(&str, &str)] = &[
     // v0.8
     ("le fichier existe déjà", "the file already exists"),
     (
-        "Aucun fichier PStart.xml n'est ouvert.",
-        "No PStart.xml file is open.",
+        "Aucun fichier PLaunch.xml n'est ouvert.",
+        "No PLaunch.xml file is open.",
     ),
     (
-        "＋ Créer un nouveau PStart.xml",
-        "＋ Create a new PStart.xml",
+        "＋ Créer un nouveau PLaunch.xml",
+        "＋ Create a new PLaunch.xml",
     ),
     ("Créer ailleurs…", "Create elsewhere…"),
-    ("Ouvrir un PStart.xml…", "Open a PStart.xml…"),
+    ("Ouvrir un PLaunch.xml…", "Open a PLaunch.xml…"),
     (
-        "Vous pouvez aussi glisser un fichier PStart.xml sur cette fenêtre,",
-        "You can also drop a PStart.xml file on this window,",
+        "Vous pouvez aussi glisser un fichier PLaunch.xml sur cette fenêtre,",
+        "You can also drop a PLaunch.xml file on this window,",
     ),
     (
-        "ou placer pstart-rs.exe à côté de votre PStart.xml.",
-        "or put pstart-rs.exe next to your PStart.xml.",
+        "ou placer plaunch.exe à côté de votre PLaunch.xml.",
+        "or put plaunch.exe next to your PLaunch.xml.",
     ),
-    ("Créer un nouveau PStart.xml", "Create a new PStart.xml"),
+    ("Créer un nouveau PLaunch.xml", "Create a new PLaunch.xml"),
     (
         "Nouveau fichier créé : ajoutez vos programmes avec ＋ ou en les déposant ici",
         "New file created: add your programs with ＋ or by dropping them here",

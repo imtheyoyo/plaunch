@@ -1,19 +1,15 @@
-# PStart-rs
+# PLaunch
 
 Lanceur portable pour clé USB, écrit en Rust avec [egui](https://github.com/emilk/egui).
-Il relit et met à jour les fichiers **`PStart.xml`** du lanceur PStart (Pegtop) :
-vous gardez votre arborescence de raccourcis telle quelle.
-
-> Projet indépendant, sans lien avec Pegtop Software. Il ne contient aucun code de
-> PStart : seul le format de fichier `PStart.xml` est pris en charge, à des fins
-> d'interopérabilité.
+Vos groupes et raccourcis sont rangés dans un fichier **`PLaunch.xml`** placé à
+côté de l'exécutable : tout reste sur la clé, rien n'est installé sur le PC.
 
 ## Fonctions
 
 - Arborescence des groupes et raccourcis, avec le nombre d'entrées par groupe.
 - Recherche instantanée sur le nom et le chemin (`Ctrl+F`, `Entrée` lance le
   premier résultat, `Échap` efface).
-- Vues **Plus utilisés** et **Récents**, à partir des compteurs de PStart.
+- Vues **Plus utilisés** et **Récents**, à partir des compteurs de PLaunch.
 - Lancement par double-clic (ou simple clic si `singleclick` est activé dans
   le fichier), menu contextuel « Lancer / Ouvrir l'emplacement ».
 - Mise à jour de `runcount` et `rundate` à chaque lancement.
@@ -24,7 +20,7 @@ vous gardez votre arborescence de raccourcis telle quelle.
   pour ne pas bloquer sur les partages réseau.
 - Écriture **sans perte** : tout le reste du fichier (notes, couleurs, options,
   capteurs…) est réécrit à l'identique, au même format (tabulations, CRLF,
-  entités `&#xE9;`). Une copie `PStart.xml.bak` est faite au premier
+  entités `&#xE9;`). Une copie `PLaunch.xml.bak` est faite au premier
   enregistrement de chaque session.
 - **Icônes** des programmes, extraites en tâche de fond.
 - **Icône de notification** : clic gauche pour afficher/masquer, clic droit
@@ -33,26 +29,26 @@ vous gardez votre arborescence de raccourcis telle quelle.
   `Échap` (recherche vide) la masque aussi.
 - **Raccourci clavier global** pour afficher/masquer la fenêtre
   (`Ctrl+Shift+Space` par défaut).
-- **Instance unique** : relancer `pstart-rs.exe` réaffiche la fenêtre ouverte.
+- **Instance unique** : relancer `plaunch.exe` réaffiche la fenêtre ouverte.
 - **Édition** : nouveau raccourci ou groupe (bouton `＋`, menus contextuels),
   modification (`F2`) avec sélecteur de fichier, suppression (`Suppr`, avec
-  confirmation). Les chemins sur le même lecteur que PStart-rs sont
+  confirmation). Les chemins sur le même lecteur que PLaunch sont
   enregistrés en **relatif**, pour rester portables.
 - **Glisser-déposer** : réorganisez raccourcis et groupes dans l'arbre
   (en haut d'un groupe = avant lui, ailleurs = dedans) ; déposez des fichiers
   depuis l'Explorateur pour les ajouter.
 - **Recherche dans le menu Démarrer** (utilisateur et tous les utilisateurs),
-  selon les options `<search>` de PStart et ses couleurs ; clic droit sur un
-  résultat → « Ajouter à PStart ».
+  selon les options `<search>` de PLaunch et ses couleurs ; clic droit sur un
+  résultat → « Ajouter à PLaunch ».
 - **Notes avec alarmes** (onglet *Notes*) : cartes colorées avec la palette de
-  PStart, alarme `AAAA/MM/JJ HH:MM` unique, quotidienne ou hebdomadaire. Le
+  PLaunch, alarme `AAAA/MM/JJ HH:MM` unique, quotidienne ou hebdomadaire. Le
   rappel s'affiche au premier plan même fenêtre masquée ; les alarmes manquées
   pendant que l'ordinateur était éteint sont signalées au démarrage. Les notes
-  sont stockées dans `pstart-rs-notes.xml`, à côté de `PStart.xml`.
+  sont stockées dans `plaunch-notes.xml`, à côté de `PLaunch.xml`.
 - **Coin actif** : laisser la souris un instant dans un coin (ou contre un
   bord) de l'écran principal affiche la fenêtre.
-- **Démarrer avec Windows** (réglages ou menu de l'icône) : valeur `PStart-rs`
-  dans `HKCU\…\Run`, distincte de celle de PStart. Chemin absolu : réactivez
+- **Démarrer avec Windows** (réglages ou menu de l'icône) : valeur `PLaunch`
+  dans `HKCU\…\Run`, distincte de celle de PLaunch. Chemin absolu : réactivez
   l'option si la clé USB change de lettre.
 - **Fenêtre de réglages** (bouton ⚙).
 - **Langue** : français ou anglais (automatique selon Windows par défaut),
@@ -77,26 +73,26 @@ vous gardez votre arborescence de raccourcis telle quelle.
 - **Dupliquer un raccourci** (clic droit → Dupliquer).
 - **Sélection multiple** (`Ctrl+clic`, `Maj+clic`) : lancer, épingler,
   déplacer vers un groupe ou supprimer plusieurs éléments à la fois.
-- **Temps d'utilisation** par programme, mesuré pendant que PStart-rs tourne
+- **Temps d'utilisation** par programme, mesuré pendant que PLaunch tourne
   (onglet Statistiques et panneau de détails), enregistré dans
-  `pstart-rs-usage.txt`.
+  `plaunch-usage.txt`.
 
 ### Nouveautés de la v0.8.1
 
-- **Création d'un PStart.xml** : si aucun fichier n'est trouvé au lancement,
-  l'écran d'accueil propose de créer un PStart.xml vide à côté de
+- **Création d'un PLaunch.xml** : si aucun fichier n'est trouvé au lancement,
+  l'écran d'accueil propose de créer un PLaunch.xml vide à côté de
   l'exécutable (ou au chemin passé en argument), de le créer ailleurs, ou
   d'ouvrir un fichier existant.
 
 ### Nouveautés de la v0.8
 
-- **Éjection de la clé corrigée** (Windows 11) : PStart-rs se ferme et un
+- **Éjection de la clé corrigée** (Windows 11) : PLaunch se ferme et un
   assistant lancé depuis le dossier temporaire demande à Windows de retirer
   le périphérique (comme « Retirer le périphérique en toute sécurité »). Un
   message confirme l'éjection ou indique ce qui la bloque (programme, fichier
   ouvert).
 - **Favoris réorganisables** : glisser-déposer dans la barre, ou clic droit →
-  « Déplacer à gauche / à droite ». L'ordre est gardé dans PStart.xml.
+  « Déplacer à gauche / à droite ». L'ordre est gardé dans PLaunch.xml.
 - **Emplacement choisi à la création** : le formulaire indique où le raccourci,
   le groupe ou le lien sera créé et permet de choisir un autre groupe ; après
   création, l'élément est affiché et sélectionné dans l'arbre.
@@ -110,21 +106,21 @@ vous gardez votre arborescence de raccourcis telle quelle.
 
 ### Nouveautés de la v0.7
 
-- **Mises à jour vérifiées** : chaque version publie `pstart-rs.exe.sha256` ;
+- **Mises à jour vérifiées** : chaque version publie `plaunch.exe.sha256` ;
   la mise à jour intégrée refuse un fichier dont l'empreinte ne correspond pas.
-- **Journal** `pstart-rs.log` à côté de l'exécutable (erreurs, lancements
+- **Journal** `plaunch.log` à côté de l'exécutable (erreurs, lancements
   échoués, mises à jour, plantages avec pile d'appels). Bouton « Ouvrir le
   journal » dans les réglages.
 - **Annuler / rétablir** (`Ctrl+Z` / `Ctrl+Y`, boutons ↶ ↷) pour toute
   modification : ajout, suppression, déplacement, nettoyage, import…
-- **Rechargement automatique** de `PStart.xml` s'il est modifié par un autre
-  programme (synchronisation, autre PC, PStart).
+- **Rechargement automatique** de `PLaunch.xml` s'il est modifié par un autre
+  programme (synchronisation, autre PC, PLaunch).
 - **Exécutable allégé** (TLS de Windows, optimisation pour la taille) avec son
   **icône intégrée**, visible dans l'Explorateur.
 - **Recherche intelligente** : fautes de frappe (« notpad »), lettres
   inversées, initiales (« vmp » → VLC media player), accents ignorés ; les
   programmes les plus lancés remontent.
-- **Variables de chemin** : `%PSTART%` (dossier de PStart.xml) et `%DRIVE%`
+- **Variables de chemin** : `%PLAUNCH%` (dossier de PLaunch.xml) et `%DRIVE%`
   (son lecteur), en plus des variables Windows ; bouton « Rendre les chemins
   portables » qui convertit en relatif les chemins absolus de la clé.
 - **Lancer tout un groupe** (clic droit ou panneau de détails).
@@ -139,23 +135,21 @@ vous gardez votre arborescence de raccourcis telle quelle.
   sous-dossier).
 - **Séparateurs**, **liens web** (`https://…`) et **icônes de groupe**.
 
-Les balises et attributs propres à PStart-rs (`runasadmin`, `favorite`,
-`globalhotkey`, `<separator>`, attribut `icon` des groupes) et les variables
-`%PSTART%` / `%DRIVE%` ne sont pas compris par l'ancien PStart.
+Nouvelles balises de `PLaunch.xml` : `runasadmin`, `favorite`, `globalhotkey`,
+`<separator>` et l'attribut `icon` des groupes.
 
 ### Nouveautés de la v0.6
 
 - **Options par raccourci** (formulaire de modification) : paramètres de la
   ligne de commande, description, fenêtre normale / réduite / agrandie,
   **exécuter en tant qu'administrateur** (demande UAC) et **lancer au
-  démarrage** de PStart-rs. Les balises `parameters`, `description`,
-  `windowstate` et `autorun` sont celles de PStart ; `runasadmin` et
-  `favorite` sont propres à PStart-rs.
+  démarrage** de PLaunch (balises `parameters`, `description`,
+  `windowstate`, `autorun`, `runasadmin` et `favorite`).
 - **Favoris** : épinglez un raccourci (clic droit ou panneau de détails). Ils
   apparaissent dans une barre sous la recherche, en tête du menu de l'icône de
   notification, et se lancent avec `Ctrl+1` à `Ctrl+9`.
 - **Changement de lettre de lecteur** : si la clé passe de `F:` à `E:`,
-  PStart-rs propose de corriger les chemins absolus qui pointaient sur
+  PLaunch propose de corriger les chemins absolus qui pointaient sur
   l'ancienne lettre, et met à jour « Démarrer avec Windows ». Correction
   manuelle possible depuis les réglages.
 - **Navigation au clavier** : flèches haut/bas dans l'arbre et les résultats
@@ -165,7 +159,7 @@ Les balises et attributs propres à PStart-rs (`runasadmin`, `favorite`,
 - **Rappels en notification Windows** (au choix : notification, boîte de
   message ou les deux).
 - **Coin actif sur tous les écrans**.
-- **Sauvegarde / restauration** : `PStart.xml`, notes et réglages dans un zip
+- **Sauvegarde / restauration** : `PLaunch.xml`, notes et réglages dans un zip
   (les fichiers remplacés sont gardés en `.avant-restauration`).
 - **Mise à jour intégrée** : vérification au démarrage, téléchargement de la
   dernière version publiée, remplacement de l'exécutable sur la clé et
@@ -176,8 +170,7 @@ Les balises et attributs propres à PStart-rs (`runasadmin`, `favorite`,
 ## Réglages
 
 Les réglages se modifient avec le bouton ⚙ ou directement dans
-`pstart-rs.ini`, créé à côté de `PStart.xml` au premier lancement (PStart-rs
-n'ajoute rien dans le fichier de PStart) :
+`plaunch.ini`, créé à côté de `PLaunch.xml` au premier lancement :
 
 ```ini
 hotkey=Ctrl+Shift+Space   ; vide pour désactiver ; ex. Ctrl+Alt+P, Shift+Super+S
@@ -192,7 +185,7 @@ theme=system              ; system, light, dark
 text_size=100             ; pourcentage (70-200)
 icon_shape=play           ; play, star, grid, bolt
 icon_color=blue           ; blue, green, orange, purple, red, gray
-icon_file=                ; ex. _Icones\pstart.ico (prioritaire sur forme/couleur)
+icon_file=                ; ex. _Icones\plaunch.ico (prioritaire sur forme/couleur)
 hot_corner_all_screens=true ; coin actif sur chaque écran
 reminders=toast           ; toast, dialog, both
 compact=false             ; mode compact
@@ -205,24 +198,24 @@ scan_ignored=             ; programmes à ne plus signaler (séparés par |)
 
 Depuis la fenêtre ⚙, tout s'applique immédiatement, sauf le raccourci global
 et l'activation de l'icône de notification (au prochain démarrage). Après
-une modification directe du fichier, relancez PStart-rs.
+une modification directe du fichier, relancez PLaunch.
 
 ## Utilisation
 
-1. Téléchargez `pstart-rs.exe` depuis l'onglet
-   [**Releases**](https://github.com/imtheyoyo/pstart-rs/releases/latest).
-2. Placez-le à côté de votre `PStart.xml`, puis lancez-le.
+1. Téléchargez `plaunch.exe` depuis l'onglet
+   [**Releases**](https://github.com/imtheyoyo/plaunch/releases/latest).
+2. Placez-le à côté de votre `PLaunch.xml`, puis lancez-le.
    Vous pouvez aussi passer le fichier en argument
-   (`pstart-rs.exe D:\PStart.xml`) ou le glisser sur la fenêtre.
+   (`plaunch.exe D:\PLaunch.xml`) ou le glisser sur la fenêtre.
 
-Conseil : faites d'abord vos essais sur une copie de `PStart.xml`, et évitez
-d'utiliser PStart et PStart-rs en même temps sur le même fichier (chacun
+Conseil : faites d'abord vos essais sur une copie de `PLaunch.xml`, et évitez
+d'utiliser PLaunch et PLaunch en même temps sur le même fichier (chacun
 écraserait les compteurs de l'autre).
 
 ## Publier une version
 
 Augmentez `version` dans `Cargo.toml` et poussez sur `main` : la compilation
-automatique crée le tag `vX.Y.Z` et la release avec `pstart-rs.exe`.
+automatique crée le tag `vX.Y.Z` et la release avec `plaunch.exe`.
 
 ## Compiler
 
@@ -235,7 +228,7 @@ cargo test
 Pour vérifier l'aller-retour sans perte sur votre propre fichier :
 
 ```powershell
-$env:PSTART_XML = "F:\_Appli Portables\PStart.xml"
+$env:PLAUNCH_XML = "F:\_Appli Portables\PLaunch.xml"
 cargo test -- --ignored
 ```
 
@@ -243,11 +236,11 @@ cargo test -- --ignored
 
 | Module | Rôle |
 |---|---|
-| `xml.rs` | Arbre XML générique, lecture via `quick-xml`, écriture au format PStart |
+| `xml.rs` | Arbre XML générique, lecture via `quick-xml`, écriture au format PLaunch |
 | `config.rs` | Chargement/enregistrement, accès aux entrées, statistiques, options |
 | `edit.rs` | Ajout, modification, suppression et déplacement dans l'arborescence |
 | `startmenu.rs` | Raccourcis du menu Démarrer pour la recherche |
-| `paths.rs` | Résolution des chemins à la manière de PStart |
+| `paths.rs` | Résolution des chemins à la manière de PLaunch |
 | `launcher.rs` | Lancement via `ShellExecuteW` (Windows) |
 | `state.rs` | État partagé entre l'interface, l'icône de notification et le raccourci |
 | `icons.rs` | Extraction des icônes (`SHGetFileInfoW`), icône de l'application |
@@ -255,8 +248,8 @@ cargo test -- --ignored
 | `hotkey.rs` | Raccourci clavier global (`global-hotkey`) |
 | `window.rs` | Affichage/masquage natif de la fenêtre |
 | `instance.rs` | Instance unique (mutex nommé) |
-| `settings.rs` | Lecture et écriture de `pstart-rs.ini` |
-| `notes.rs` | Notes et alarmes (`pstart-rs-notes.xml`) |
+| `settings.rs` | Lecture et écriture de `plaunch.ini` |
+| `notes.rs` | Notes et alarmes (`plaunch-notes.xml`) |
 | `alarms.rs` | Déclenchement des rappels |
 | `hotcorner.rs` | Coin ou bord actif |
 | `autostart.rs` | Démarrage avec Windows (registre) |

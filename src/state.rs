@@ -48,7 +48,7 @@ pub struct Shared {
     /// États précédents de l'arborescence (annuler / rétablir).
     pub undo: Mutex<Vec<Element>>,
     pub redo: Mutex<Vec<Element>>,
-    /// PStart.xml modifié par un autre programme : à recharger.
+    /// PLaunch.xml modifié par un autre programme : à recharger.
     pub file_changed: AtomicBool,
     /// Éjection demandée depuis le menu de l'icône.
     pub ask_eject: AtomicBool,
@@ -230,7 +230,7 @@ impl Shared {
         }
     }
 
-    /// Lettre du lecteur de PStart.xml s'il peut être éjecté.
+    /// Lettre du lecteur de PLaunch.xml s'il peut être éjecté.
     pub fn eject_drive(&self) -> Option<char> {
         let guard = self.config.lock().unwrap();
         let file = guard.as_ref()?.file.to_string_lossy().into_owned();

@@ -8,9 +8,9 @@ import re
 import sys
 
 FOOTER = (
-    "\n\n---\nTéléchargez `pstart-rs.exe` ci-dessous et placez-le à côté de "
-    "votre `PStart.xml`. Historique complet : "
-    "[CHANGELOG.md](https://github.com/imtheyoyo/pstart-rs/blob/main/CHANGELOG.md)."
+    "\n\n---\nTéléchargez `plaunch.exe` ci-dessous et placez-le à côté de "
+    "votre `PLaunch.xml`. Historique complet : "
+    "[CHANGELOG.md](https://github.com/imtheyoyo/plaunch/blob/main/CHANGELOG.md)."
 )
 
 

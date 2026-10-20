@@ -80,7 +80,7 @@ impl Rows<'_> {
                         .filter(|i| !i.trim().is_empty())
                         .map(|i| paths::resolve(i, &cfg.base_dir))
                         .and_then(|t| self.textures.get(&t));
-                    let id = ui.make_persistent_id(("pstart-group", path.clone()));
+                    let id = ui.make_persistent_id(("plaunch-group", path.clone()));
                     let mut state =
                         egui::collapsing_header::CollapsingState::load_with_default_open(
                             ui.ctx(),
@@ -432,7 +432,7 @@ impl Rows<'_> {
                     actions.push(launch());
                     ui.close();
                 }
-                if ui.button(tr("Ajouter à PStart")).clicked() {
+                if ui.button(tr("Ajouter à PLaunch")).clicked() {
                     actions.push(Action::AddExternal {
                         name: item.name.clone(),
                         path: item.path.clone(),

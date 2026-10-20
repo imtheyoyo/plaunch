@@ -7,7 +7,7 @@ pub fn acquire() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
 
-    let name: Vec<u16> = "Local\\PStartRsSingleInstance"
+    let name: Vec<u16> = "Local\\PLaunchSingleInstance"
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();

@@ -2,7 +2,7 @@
 //! suppression et déplacement de raccourcis et de groupes.
 //!
 //! Les positions sont des [`ItemPath`] (indices depuis `<start><files>`).
-//! Les éléments créés suivent l'ordre de balises de PStart.
+//! Les éléments créés suivent l'ordre de balises de PLaunch.
 
 use crate::config::{self, Config, EntryOptions, ItemPath};
 use crate::i18n::tr;
@@ -19,7 +19,7 @@ pub enum NewItem {
     Group {
         name: String,
     },
-    /// Trait de séparation (balise `<separator>` propre à PStart-rs).
+    /// Trait de séparation (balise `<separator>` propre à PLaunch).
     Separator,
 }
 
@@ -168,7 +168,7 @@ pub fn update_entry(
     Ok(())
 }
 
-/// Icône d'un groupe (attribut `icon`, propre à PStart-rs).
+/// Icône d'un groupe (attribut `icon`, propre à PLaunch).
 pub fn set_group_icon(cfg: &mut Config, path: &[usize], icon: Option<&str>) -> Result<(), String> {
     let el = node_mut(files_mut(cfg), path).ok_or(tr("élément introuvable"))?;
     el.attrs.retain(|(k, _)| k != "icon");
@@ -314,7 +314,7 @@ pub fn retarget_drive(cfg: &mut Config, old: char, new: char) -> usize {
     n
 }
 
-/// Rend relatifs les chemins absolus situés sur le lecteur de PStart.xml
+/// Rend relatifs les chemins absolus situés sur le lecteur de PLaunch.xml
 /// (portables d'une lettre à l'autre). Renvoie le nombre de balises changées.
 pub fn make_portable(cfg: &mut Config) -> usize {
     let base = cfg.base_dir.clone();
@@ -446,7 +446,7 @@ mod tests {
     use super::*;
     use crate::config::display_name;
 
-    const SAMPLE: &str = include_str!("../tests/fixtures/PStart.sample.xml");
+    const SAMPLE: &str = include_str!("../tests/fixtures/PLaunch.sample.xml");
 
     fn cfg() -> Config {
         Config::from_str(SAMPLE, "E:\\Portable").unwrap()
@@ -498,7 +498,7 @@ mod tests {
         .unwrap();
         assert_eq!(g, vec![1]);
         assert_eq!(names(&c, &[])[1], "Jeux");
-        // Le groupe vide s'écrit comme PStart.
+        // Le groupe vide s'écrit comme PLaunch.
         assert!(c
             .to_xml()
             .contains("\t\t<files name=\"Jeux\">\r\n\t\t</files>\r\n"));
