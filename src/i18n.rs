@@ -815,6 +815,8 @@ const EN: &[(&str, &str)] = &[
     ("{} éléments sélectionnés", "{} items selected"),
     ("↩ Revenir à la version {}", "↩ Go back to version {}"),
     // v0.10
+    ("Aucun raccourci : ajoutez des programmes avec ＋ ou en les déposant ici.", "No shortcuts yet: add programs with ＋ or by dropping them here."),
+    ("Groupe épinglé : cliquer pour ouvrir", "Pinned group: click to open"),
     ("Clé presque pleine : {} libres. Les enregistrements risquent d'échouer.", "Drive almost full: {} free. Saving may fail."),
     ("Créer", "Create"),
     ("Go", "GB"),

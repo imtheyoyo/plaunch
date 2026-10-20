@@ -60,6 +60,14 @@ côté de l'exécutable : tout reste sur la clé, rien n'est installé sur le PC
   relatif accepté pour rester portable). Appliquée à la fenêtre et à la zone
   de notification sans redémarrer.
 
+### Nouveautés de la v0.10
+
+- **Profils** : `PLaunch.xml`, `PLaunch-Travail.xml`, `PLaunch-Maison.xml`…
+  dans le même dossier ; menu 📂 de la barre d'état ou menu de l'icône.
+- **Vérification de la clé** (lecture seule, place libre) au chargement.
+- **Groupes épinglés** dans la barre des favoris, ouverts en menus.
+- **Infobulles détaillées** au survol des raccourcis.
+
 ### Nouveautés de la v0.9
 
 - **Code réorganisé** : l'interface est découpée en modules (`app/loading`,
@@ -262,6 +270,8 @@ cargo test -- --ignored
 | `update.rs` | Mise à jour depuis GitHub Releases |
 | `app.rs`, `app/*.rs` | Interface egui (chargement, actions, vues, clavier, dialogues, arbre, statistiques) |
 | `monitor.rs`, `usage.rs` | Programmes ouverts et temps d'utilisation |
+| `profiles.rs` | Profils (plusieurs fichiers de raccourcis) |
+| `drivecheck.rs` | Vérification du lecteur (lecture seule, place libre) |
 
 ## Journal des modifications
 
@@ -286,6 +296,8 @@ Voir [CHANGELOG.md](CHANGELOG.md) ; chaque release reprend la section de sa vers
   création, saisie des raccourcis au clavier, calendrier des alarmes.~~ ✔
 - ~~**v0.9** : code réorganisé, retour arrière, programmes ouverts,
   duplication, sélection multiple, temps d'utilisation.~~ ✔
+- ~~**v0.10** : nouveau nom PLaunch, profils, vérification de la clé, groupes
+  épinglés, infobulles détaillées.~~ ✔
 
 ## Licence
 

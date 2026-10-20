@@ -4,6 +4,23 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## v0.10.0
+
+- **Nouveau nom : PLaunch.** L'exécutable devient `plaunch.exe` et le fichier
+  des raccourcis `PLaunch.xml` ; réglages, notes, journal et temps
+  d'utilisation : `plaunch.ini`, `plaunch-notes.xml`, `plaunch.log`,
+  `plaunch-usage.txt`.
+- **Profils** : plusieurs fichiers de raccourcis dans le même dossier
+  (`PLaunch-Travail.xml`, `PLaunch-Maison.xml`…). Changement et création
+  depuis la barre d'état ou le menu de l'icône ; le dernier profil utilisé
+  est rouvert au démarrage.
+- **Vérification de la clé** au chargement : alerte si le lecteur est en
+  lecture seule ou presque plein.
+- **Groupes épinglés** dans la barre des favoris : un clic ouvre le contenu du
+  groupe en menus (clic droit sur un groupe → « Épingler dans la barre »).
+- **Infobulles détaillées** au survol d'un raccourci : description, cible,
+  paramètres, lancements, temps d'utilisation, raccourci clavier, état.
+
 ## v0.9.0
 
 - **Code réorganisé** : l'interface est découpée en modules (chargement,

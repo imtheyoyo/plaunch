@@ -253,14 +253,14 @@ impl PLaunchApp {
                         }
                         ui.separator();
                         self.group_menu(ui, cfg, el, g, actions);
+                        ui.separator();
+                        if ui.button(tr("Retirer de la barre")).clicked() {
+                            actions.push(Action::ToggleGroupFavorite(g.clone()));
+                            ui.close();
+                        }
                     })
                     .response;
-                resp.context_menu(|ui| {
-                    if ui.button(tr("Retirer de la barre")).clicked() {
-                        actions.push(Action::ToggleGroupFavorite(g.clone()));
-                        ui.close();
-                    }
-                });
+                resp.on_hover_text(tr("Groupe épinglé : cliquer pour ouvrir"));
             }
         });
     }
@@ -353,6 +353,12 @@ impl PLaunchApp {
                         if let Some(files) = cfg.files() {
                             let mut path = Vec::new();
                             let mut keys = Vec::new();
+                            if files.children.is_empty() {
+                                ui.add_space(12.0);
+                                ui.weak(tr(
+                                    "Aucun raccourci : ajoutez des programmes avec ＋ ou en les déposant ici.",
+                                ));
+                            }
                             rows.tree(ui, cfg, files, &mut path, &mut keys, &mut actions);
                             rows.end_drop_zone(ui, files.children.len(), &mut actions);
                         }
