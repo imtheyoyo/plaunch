@@ -30,14 +30,3 @@ jobs:
               echo "pas encore de release : $tag"
             fi
           done
-      # Anciens fichiers publiés : renommés avec le nom actuel.
-      - name: Noms des fichiers des releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/${{ github.repository }}/releases?per_page=100" \
-            --jq '.[].assets[] | select(.name | startswith("pstart-rs")) | "\(.id) \(.name)"' |
-          while read -r id name; do
-            new="plaunch${name#pstart-rs}"
-            gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" -f name="$new" --jq .name
-          done
