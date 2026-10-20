@@ -1,6 +1,6 @@
 [package]
 name = "plaunch"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "Lanceur portable pour clé USB, compatible avec les fichiers PLaunch.xml"
 license = "MIT"
@@ -33,6 +33,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_IO",
+    "Win32_System_LibraryLoader",
     "Win32_System_Ioctl",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",

@@ -74,6 +74,8 @@ pub fn spawn(shared: Arc<Shared>) {
                 save_usage(&shared);
                 return;
             }
+            // Menu de notification : suit le thème de Windows en mode « Système ».
+            crate::menutheme::follow_system();
             let running = running_map(&eject::all_processes());
             let elapsed = last.elapsed().as_secs().min(30);
             last = Instant::now();

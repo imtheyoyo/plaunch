@@ -519,4 +519,5 @@ pub(super) fn apply_appearance(ctx: &egui::Context, s: &Settings) {
         Theme::Dark => egui::ThemePreference::Dark,
     });
     ctx.set_zoom_factor(s.text_size as f32 / 100.0);
+    crate::menutheme::apply(s.theme);
 }

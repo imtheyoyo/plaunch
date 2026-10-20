@@ -4,6 +4,13 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## v0.10.1
+
+- **Menu de l'icône de notification aux couleurs du thème** : le clic droit
+  sur l'icône ouvre désormais un menu clair ou sombre selon le thème choisi
+  dans les réglages. En thème « Système », il suit le mode des applications
+  de Windows, y compris quand on le change pendant que PLaunch tourne.
+
 ## v0.10.0
 
 - **Nouveau nom : PLaunch.** L'exécutable devient `plaunch.exe` et le fichier

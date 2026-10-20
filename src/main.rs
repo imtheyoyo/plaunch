@@ -17,6 +17,7 @@ mod icons;
 mod instance;
 mod launcher;
 mod log;
+mod menutheme;
 mod monitor;
 mod notes;
 mod paths;
@@ -88,6 +89,8 @@ fn main() -> eframe::Result {
         .as_deref()
         .map(settings::load)
         .unwrap_or_default();
+    // Avant la création du menu de notification.
+    menutheme::apply(settings.theme);
     // Sans fichier demandé : dernier profil utilisé dans ce dossier.
     if std::env::args_os().nth(1).is_none() {
         if let (Some(f), Some(last)) = (&file, &settings.last_profile) {
