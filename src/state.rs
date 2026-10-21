@@ -94,20 +94,21 @@ impl Shared {
         self.launch_mode(path, false);
     }
 
+    /// Nom et processus de l'entrée située à `path`, si elle tourne déjà.
+    pub fn running_entry(&self, path: &[usize]) -> Option<(String, Vec<u32>)> {
+        let guard = self.config.lock().unwrap();
+        let cfg = guard.as_ref()?;
+        let el = cfg.item(path).filter(|e| e.name == "file")?;
+        let target = crate::eject::path_key(&cfg.resolve(el));
+        let pids = self.running.lock().unwrap().get(&target).cloned()?;
+        Some((config::display_name(el).to_string(), pids))
+    }
+
     /// Lance l'entrée ; si elle tourne déjà (et sauf `force_new`), ramène
     /// sa fenêtre au premier plan.
     pub fn launch_mode(&self, path: &[usize], force_new: bool) {
         if !force_new && self.reuse_running.load(Ordering::SeqCst) {
-            let found = {
-                let guard = self.config.lock().unwrap();
-                guard.as_ref().and_then(|cfg| {
-                    let el = cfg.item(path).filter(|e| e.name == "file")?;
-                    let target = crate::eject::path_key(&cfg.resolve(el));
-                    let pids = self.running.lock().unwrap().get(&target).cloned()?;
-                    Some((config::display_name(el).to_string(), pids))
-                })
-            };
-            if let Some((name, pids)) = found {
+            if let Some((name, pids)) = self.running_entry(path) {
                 if crate::eject::activate(&pids) {
                     self.set_status(trf("Déjà ouvert : {}", &[&name]));
                     return;

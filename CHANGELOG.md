@@ -4,6 +4,13 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## v0.10.2
+
+- **Programme déjà ouvert, lancé depuis l'icône de notification** : une
+  boîte de dialogue demande s'il faut lancer une autre instance (Oui),
+  afficher la fenêtre déjà ouverte (Non, choix par défaut) ou ne rien
+  faire (Annuler).
+
 ## v0.10.1
 
 - **Menu de l'icône de notification aux couleurs du thème** : le clic droit

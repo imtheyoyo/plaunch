@@ -127,11 +127,76 @@ fn install_handlers(shared: Arc<Shared>) {
                     *shared.switch_profile.lock().unwrap() = file;
                     shared.repaint();
                 } else if let Some(path) = parse_entry_id(id) {
-                    shared.launch(&path);
+                    launch_from_menu(&shared, path);
                 }
             }
         }
     }));
+}
+
+/// Lancement depuis le menu : si le programme tourne déjà, on demande s'il
+/// faut en ouvrir une autre instance ou afficher celle qui est ouverte.
+fn launch_from_menu(shared: &Arc<Shared>, path: Vec<usize>) {
+    let Some((name, pids)) = shared.running_entry(&path) else {
+        shared.launch_mode(&path, true);
+        return;
+    };
+    let shared = shared.clone();
+    // Boîte modale dans son propre thread : la boucle de l'interface et du
+    // menu continue de tourner.
+    std::thread::spawn(move || match ask_another_instance(&name) {
+        Choice::NewInstance => shared.launch_mode(&path, true),
+        Choice::ShowExisting => {
+            if crate::eject::activate(&pids) {
+                shared.set_status(trf("Déjà ouvert : {}", &[&name]));
+            }
+        }
+        Choice::Cancel => {}
+    });
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+enum Choice {
+    NewInstance,
+    ShowExisting,
+    Cancel,
+}
+
+#[cfg(windows)]
+fn ask_another_instance(name: &str) -> Choice {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDNO, IDYES, MB_DEFBUTTON2, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST,
+        MB_YESNOCANCEL,
+    };
+    let text = format!(
+        "{}\n\n{}\n{}\n{}",
+        trf("« {} » est déjà ouvert.", &[&name]),
+        tr("Oui : lancer une autre instance"),
+        tr("Non : afficher la fenêtre déjà ouverte"),
+        tr("Annuler : ne rien faire"),
+    );
+    let text: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+    let caption: Vec<u16> = "PLaunch".encode_utf16().chain(Some(0)).collect();
+    // SAFETY : chaînes terminées par un zéro ; fenêtre parente nulle.
+    let r = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_YESNOCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_TOPMOST | MB_SETFOREGROUND,
+        )
+    };
+    match r {
+        IDYES => Choice::NewInstance,
+        IDNO => Choice::ShowExisting,
+        _ => Choice::Cancel,
+    }
+}
+
+#[cfg(not(windows))]
+fn ask_another_instance(_name: &str) -> Choice {
+    Choice::ShowExisting
 }
 
 /// Quitte proprement : la fenêtre reçoit WM_CLOSE, ce qui laisse eframe

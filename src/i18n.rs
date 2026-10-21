@@ -838,6 +838,11 @@ const EN: &[(&str, &str)] = &[
     ("Un profil est un fichier de raccourcis séparé, dans le même dossier (ex. Travail, Maison).", "A profile is a separate shortcut file in the same folder (e.g. Work, Home)."),
     ("Utilisé {}", "Used {}"),
     ("Épingler dans la barre", "Pin to the bar"),
+    // v0.10.2
+    ("« {} » est déjà ouvert.", "“{}” is already open."),
+    ("Oui : lancer une autre instance", "Yes: start another instance"),
+    ("Non : afficher la fenêtre déjà ouverte", "No: show the window already open"),
+    ("Annuler : ne rien faire", "Cancel: do nothing"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (
