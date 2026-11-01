@@ -29,6 +29,7 @@ use crate::{
 
 mod actions;
 mod dialogs;
+mod icon;
 mod input;
 mod loading;
 mod stats;
@@ -361,6 +362,7 @@ impl PLaunchApp {
 
         let settings_path = file.as_deref().map(settings::path_for);
         i18n::set_language(settings.language);
+        icon::install(&cc.egui_ctx);
         apply_appearance(&cc.egui_ctx, &settings);
         *shared.hot_corner.lock().unwrap() = (
             settings.hot_corner,
