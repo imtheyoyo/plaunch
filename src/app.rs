@@ -32,6 +32,7 @@ mod dialogs;
 mod icon;
 mod input;
 mod loading;
+mod modern;
 mod stats;
 mod tree;
 mod views;

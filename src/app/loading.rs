@@ -514,10 +514,17 @@ impl PLaunchApp {
 /// Thème et taille du texte.
 pub(super) fn apply_appearance(ctx: &egui::Context, s: &Settings) {
     ctx.set_theme(match s.theme {
-        Theme::System => egui::ThemePreference::System,
+        Theme::System | Theme::Modern => egui::ThemePreference::System,
         Theme::Light => egui::ThemePreference::Light,
         Theme::Dark => egui::ThemePreference::Dark,
     });
+    // Toujours repartir des styles d'egui : sinon le style « Moderne »
+    // resterait en place après être revenu à un autre thème.
+    if s.theme == Theme::Modern {
+        super::modern::apply(ctx);
+    } else {
+        super::modern::reset(ctx);
+    }
     ctx.set_zoom_factor(s.text_size as f32 / 100.0);
     crate::menutheme::apply(s.theme);
 }

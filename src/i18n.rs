@@ -843,6 +843,8 @@ const EN: &[(&str, &str)] = &[
     ("Oui : lancer une autre instance", "Yes: start another instance"),
     ("Non : afficher la fenêtre déjà ouverte", "No: show the window already open"),
     ("Annuler : ne rien faire", "Cancel: do nothing"),
+    // v0.11
+    ("Moderne", "Modern"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (

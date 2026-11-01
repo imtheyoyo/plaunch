@@ -18,16 +18,20 @@ pub enum Theme {
     System,
     Light,
     Dark,
+    /// Style « Moderne » (façon Windows 11) qui suit le mode clair/sombre
+    /// de Windows.
+    Modern,
 }
 
 impl Theme {
-    pub const ALL: [Theme; 3] = [Theme::System, Theme::Light, Theme::Dark];
+    pub const ALL: [Theme; 4] = [Theme::System, Theme::Light, Theme::Dark, Theme::Modern];
 
     pub fn key(self) -> &'static str {
         match self {
             Theme::System => "system",
             Theme::Light => "light",
             Theme::Dark => "dark",
+            Theme::Modern => "modern",
         }
     }
 
@@ -36,6 +40,7 @@ impl Theme {
             Theme::System => tr("Système"),
             Theme::Light => tr("Clair"),
             Theme::Dark => tr("Sombre"),
+            Theme::Modern => tr("Moderne"),
         }
     }
 
@@ -43,6 +48,7 @@ impl Theme {
         match s.trim().to_ascii_lowercase().as_str() {
             "light" | "clair" => Theme::Light,
             "dark" | "sombre" => Theme::Dark,
+            "modern" | "moderne" => Theme::Modern,
             _ => Theme::System,
         }
     }
@@ -420,6 +426,21 @@ mod tests {
         assert_eq!(s.text_size, 200);
         assert_eq!(s.icon_color, IconColor::Blue);
         assert_eq!(parse("text_size=10").text_size, 70);
+    }
+
+    #[test]
+    fn modern_theme_round_trip() {
+        assert_eq!(Theme::Modern.key(), "modern");
+        assert_eq!(Theme::from_key("Moderne"), Theme::Modern);
+        let s = Settings {
+            theme: Theme::Modern,
+            ..Default::default()
+        };
+        assert!(s.to_ini().contains("theme=modern"));
+        assert_eq!(parse(&s.to_ini()).theme, Theme::Modern);
+        for t in Theme::ALL {
+            assert_eq!(Theme::from_key(t.key()), t);
+        }
     }
 
     #[test]

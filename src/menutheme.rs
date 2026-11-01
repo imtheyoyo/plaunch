@@ -24,8 +24,8 @@ pub fn app_mode(theme: Theme, system_dark: bool) -> i32 {
     match theme {
         Theme::Dark => FORCE_DARK,
         Theme::Light => FORCE_LIGHT,
-        Theme::System if system_dark => FORCE_DARK,
-        Theme::System => FORCE_LIGHT,
+        Theme::System | Theme::Modern if system_dark => FORCE_DARK,
+        Theme::System | Theme::Modern => FORCE_LIGHT,
     }
 }
 
@@ -34,13 +34,15 @@ fn code(theme: Theme) -> i32 {
         Theme::System => 1,
         Theme::Light => 2,
         Theme::Dark => 3,
+        Theme::Modern => 4,
     }
 }
 
 /// Applique le thème aux menus natifs.
 pub fn apply(theme: Theme) {
     CHOSEN.store(code(theme), Ordering::SeqCst);
-    let mode = app_mode(theme, theme == Theme::System && imp::system_is_dark());
+    let follows = matches!(theme, Theme::System | Theme::Modern);
+    let mode = app_mode(theme, follows && imp::system_is_dark());
     if CURRENT.swap(mode, Ordering::SeqCst) != mode {
         imp::set_mode(mode);
     }
@@ -49,8 +51,11 @@ pub fn apply(theme: Theme) {
 /// En mode « Système », suit un changement de thème de Windows (appel peu
 /// coûteux, fait régulièrement).
 pub fn follow_system() {
-    if CHOSEN.load(Ordering::SeqCst) == code(Theme::System) {
-        apply(Theme::System);
+    let chosen = CHOSEN.load(Ordering::SeqCst);
+    for theme in [Theme::System, Theme::Modern] {
+        if chosen == code(theme) {
+            apply(theme);
+        }
     }
 }
 
@@ -124,5 +129,7 @@ mod tests {
         assert_eq!(app_mode(Theme::Light, true), FORCE_LIGHT);
         assert_eq!(app_mode(Theme::System, true), FORCE_DARK);
         assert_eq!(app_mode(Theme::System, false), FORCE_LIGHT);
+        assert_eq!(app_mode(Theme::Modern, true), FORCE_DARK);
+        assert_eq!(app_mode(Theme::Modern, false), FORCE_LIGHT);
     }
 }
