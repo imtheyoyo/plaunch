@@ -302,3 +302,7 @@ Voir [CHANGELOG.md](CHANGELOG.md) ; chaque release reprend la section de sa vers
 ## Licence
 
 MIT
+
+Les icônes de l'interface sont un sous-ensemble de [Phosphor](https://phosphoricons.com)
+(licence MIT, `assets/fonts/PHOSPHOR-LICENSE.txt`), regénérable avec
+`tools/make_icon_font.py`.

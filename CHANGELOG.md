@@ -4,6 +4,18 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## v0.11.0
+
+- **Nouveau thème « Moderne »** (Réglages › Apparence › Thème), dans l'esprit
+  de Windows 11 : coins arrondis, espacements plus aérés, boutons sans
+  bordure, accent bleu, ombres douces et barres de défilement fines. Il suit
+  le mode clair ou sombre de Windows, avec une palette pour chacun.
+- **Icônes corrigées** : certains symboles de l'interface (annuler, rétablir,
+  mode compact, ＋, favoris, dossiers, alarme…) s'affichaient en carrés sur
+  certains PC, faute de police Windows les contenant. PLaunch embarque
+  désormais ses propres icônes (Phosphor, licence MIT, 12 Ko) : elles
+  s'affichent partout, dans le même style.
+
 ## v0.10.2
 
 - **Programme déjà ouvert, lancé depuis l'icône de notification** : une
