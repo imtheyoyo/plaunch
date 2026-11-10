@@ -55,6 +55,7 @@ mod tree;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -230,6 +231,9 @@ pub struct Bridge {
     input: input::Driver,
     /// Dernier arbre capturé (pour les clics par libellé).
     last_tree: Option<Arc<tree::Snapshot>>,
+    /// Captures demandées pas encore reçues : avec wgpu, l'image n'est relue
+    /// qu'aux images suivantes, qu'il faut donc continuer à dessiner.
+    shots_pending: Arc<AtomicUsize>,
 }
 
 impl Bridge {
@@ -246,6 +250,7 @@ impl Bridge {
             tree_jobs: Vec::new(),
             input: input::Driver::default(),
             last_tree: None,
+            shots_pending: Arc::default(),
         })
     }
 
@@ -287,7 +292,7 @@ impl Bridge {
                 }
             }
         }
-        if self.input.busy() {
+        if self.input.busy() || self.shots_pending.load(Ordering::SeqCst) > 0 {
             ctx.request_repaint();
         } else if !self.tree_jobs.is_empty() {
             ctx.request_repaint_after(Duration::from_millis(50));
@@ -325,7 +330,10 @@ impl Bridge {
         let ppp = self.ctx.pixels_per_point();
         let opts = image::ShotOptions::from_args(&job.args, ppp);
         let reply = job.reply;
+        let pending = self.shots_pending.clone();
+        pending.fetch_add(1, Ordering::SeqCst);
         self.ctx.request_screenshot(move |img| {
+            pending.fetch_sub(1, Ordering::SeqCst);
             // Encodage hors du fil de l'interface.
             std::thread::spawn(move || {
                 let _ = reply.send(image::encode(&img, &opts));
