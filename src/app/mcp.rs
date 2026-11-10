@@ -226,7 +226,10 @@ impl PLaunchApp {
                     "recent" => View::Recent,
                     "notes" => View::Notes,
                     "stats" => View::Stats,
-                    v => return call.error(format!("vue inconnue : {v}")),
+                    v => {
+                        let msg = format!("vue inconnue : {v}");
+                        return call.error(msg);
+                    }
                 };
                 self.view = view;
                 call.ok(format!("vue : {}", view.label()))

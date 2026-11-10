@@ -619,10 +619,13 @@ impl eframe::App for PLaunchApp {
 
 impl PLaunchApp {
     /// Pilotage MCP en cours (la fenêtre doit alors rester visible).
+    #[cfg(feature = "mcp")]
     fn mcp_active(&self) -> bool {
-        let active = false;
-        #[cfg(feature = "mcp")]
-        let active = self.mcp.is_some();
-        active
+        self.mcp.is_some()
+    }
+
+    #[cfg(not(feature = "mcp"))]
+    fn mcp_active(&self) -> bool {
+        false
     }
 }
