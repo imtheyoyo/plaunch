@@ -1,0 +1,12 @@
+[package]
+name = "egui-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "Serveur MCP intégré à une application egui : une IA pilote l'interface pour les tests de débogage"
+license = "MIT"
+publish = false
+
+[dependencies]
+egui = { version = "0.37", default-features = false }
+serde_json = "1"
+png = "0.18"

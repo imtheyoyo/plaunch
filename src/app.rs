@@ -32,6 +32,8 @@ mod dialogs;
 mod icon;
 mod input;
 mod loading;
+#[cfg(feature = "mcp")]
+mod mcp;
 mod modern;
 mod stats;
 mod tree;
@@ -349,6 +351,9 @@ pub struct PLaunchApp {
     multi: Vec<ItemPath>,
     /// Problèmes du lecteur (lecture seule, place) signalés au chargement.
     drive_warnings: Vec<String>,
+    /// Serveur MCP (pilotage par une IA pour les tests), si `--mcp`.
+    #[cfg(feature = "mcp")]
+    mcp: Option<egui_mcp::Bridge>,
 }
 
 impl PLaunchApp {
@@ -410,6 +415,8 @@ impl PLaunchApp {
             requested_file: file.clone(),
             multi: Vec::new(),
             drive_warnings: Vec::new(),
+            #[cfg(feature = "mcp")]
+            mcp: mcp::start(&cc.egui_ctx),
         };
         if let Some(f) = file.filter(|f| f.exists()) {
             app.open(&f);
@@ -465,8 +472,17 @@ impl PLaunchApp {
 }
 
 impl eframe::App for PLaunchApp {
+    #[cfg(feature = "mcp")]
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(b) = &mut self.mcp {
+            b.raw_input_hook(raw_input);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        #[cfg(feature = "mcp")]
+        self.mcp_calls();
         self.poll_existence();
         self.sync_textures(&ctx);
         if let Some(t) = &mut self.tray {
@@ -488,7 +504,7 @@ impl eframe::App for PLaunchApp {
         }
         if self.first_frame {
             self.first_frame = false;
-            if self.settings.start_hidden && self.tray.is_some() {
+            if self.settings.start_hidden && self.tray.is_some() && !self.mcp_active() {
                 window::hide();
             }
         }
@@ -596,5 +612,17 @@ impl eframe::App for PLaunchApp {
         for a in actions {
             self.apply(a);
         }
+        #[cfg(feature = "mcp")]
+        self.mcp_end_frame(&ctx);
+    }
+}
+
+impl PLaunchApp {
+    /// Pilotage MCP en cours (la fenêtre doit alors rester visible).
+    fn mcp_active(&self) -> bool {
+        let active = false;
+        #[cfg(feature = "mcp")]
+        let active = self.mcp.is_some();
+        active
     }
 }

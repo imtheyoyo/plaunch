@@ -4,6 +4,16 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## Non publié
+
+- **Pilotage par une IA pour les tests** : nouvelle variante `plaunch-mcp.exe`
+  (fonctionnalité Cargo `mcp`), qui embarque un serveur MCP activé par
+  `--mcp`. Claude Code ou Claude Desktop peuvent alors capturer la fenêtre,
+  lister les widgets, cliquer, taper, lire le journal et appeler les
+  commandes de PLaunch (sélection, lancement, recherche, vues, dialogues,
+  annuler…) pour reproduire et vérifier les corrections. `plaunch.exe` ne
+  change pas. Voir [docs/MCP.md](docs/MCP.md).
+
 ## v0.11.0
 
 - **Nouveau thème « Moderne »** (Réglages › Apparence › Thème), dans l'esprit

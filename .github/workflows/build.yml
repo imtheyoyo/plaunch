@@ -2,7 +2,8 @@ name: build
 
 on:
   push:
-    branches: [main]
+    # Les branches feature/ sont compilées et testées, mais jamais publiées.
+    branches: [main, 'feature/**']
   pull_request:
   workflow_dispatch:
 
@@ -23,8 +24,13 @@ jobs:
         run: |
           # Erreurs de compilation et tests en échec publiés en annotations.
           $env:CARGO_TERM_COLOR = "never"
-          $out = cargo test --locked 2>&1 | ForEach-Object { "$_" }
+          # Sans puis avec le serveur MCP (fonctionnalité « mcp »).
+          $out = cargo test --locked --workspace 2>&1 | ForEach-Object { "$_" }
           $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            $out += cargo test --locked --workspace --all-features 2>&1 | ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+          }
           $out | Write-Output
           $out | Where-Object { $_ -match '^(error|warning)|panicked|FAILED|^\s+-->' } |
             Select-Object -First 30 | ForEach-Object { Write-Output "::error::$_" }
@@ -34,21 +40,34 @@ jobs:
         run: |
           # Les diagnostics sont aussi publiés en annotations, lisibles sans ouvrir le journal.
           $env:CARGO_TERM_COLOR = "never"
-          $out = cargo clippy --locked --all-targets --message-format=short -- -D warnings 2>&1 | ForEach-Object { "$_" }
+          $out = cargo clippy --locked --workspace --all-targets --message-format=short -- -D warnings 2>&1 | ForEach-Object { "$_" }
           $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            $out += cargo clippy --locked --workspace --all-targets --all-features --message-format=short -- -D warnings 2>&1 | ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+          }
           $out | Write-Output
           $out | Where-Object { $_ -match '(error|warning)' -and $_ -notmatch '^\s*(Compiling|Checking)' } |
             Select-Object -First 20 | ForEach-Object { Write-Output "::error::$_" }
           exit $code
       - name: Build release
         run: cargo build --locked --release
+      # Variante pilotable par une IA (serveur MCP, voir docs/MCP.md),
+      # compilée à part pour que plaunch.exe reste inchangé.
+      - name: Build release (MCP)
+        shell: pwsh
+        run: |
+          cargo build --locked --release --features mcp --target-dir target-mcp
+          Copy-Item target-mcp/release/plaunch.exe target/release/plaunch-mcp.exe
       # Empreinte vérifiée par la mise à jour intégrée avant installation.
       - name: Checksum
         shell: pwsh
         run: |
           $h = (Get-FileHash target/release/plaunch.exe -Algorithm SHA256).Hash.ToLower()
           "$h  plaunch.exe" | Out-File -Encoding ascii -NoNewline target/release/plaunch.exe.sha256
-          Get-Item target/release/plaunch.exe | Select-Object Name, Length
+          $m = (Get-FileHash target/release/plaunch-mcp.exe -Algorithm SHA256).Hash.ToLower()
+          "$m  plaunch-mcp.exe" | Out-File -Encoding ascii -NoNewline target/release/plaunch-mcp.exe.sha256
+          Get-Item target/release/plaunch.exe, target/release/plaunch-mcp.exe | Select-Object Name, Length
           Get-Content target/release/plaunch.exe.sha256
       - uses: actions/upload-artifact@v5
         with:
@@ -56,6 +75,8 @@ jobs:
           path: |
             target/release/plaunch.exe
             target/release/plaunch.exe.sha256
+            target/release/plaunch-mcp.exe
+            target/release/plaunch-mcp.exe.sha256
       # Publication automatique : à chaque nouvelle version dans Cargo.toml,
       # le premier build réussi sur main crée le tag vX.Y.Z et la release.
       - name: Version
@@ -90,3 +111,5 @@ jobs:
           files: |
             target/release/plaunch.exe
             target/release/plaunch.exe.sha256
+            target/release/plaunch-mcp.exe
+            target/release/plaunch-mcp.exe.sha256

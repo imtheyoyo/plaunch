@@ -7,7 +7,15 @@ license = "MIT"
 repository = "https://github.com/imtheyoyo/plaunch"
 readme = "README.md"
 
+[workspace]
+members = [".", "crates/egui-mcp"]
+
+[features]
+# Serveur MCP pour le pilotage par une IA pendant les tests (plaunch-mcp.exe).
+mcp = ["dep:egui-mcp"]
+
 [dependencies]
+egui-mcp = { path = "crates/egui-mcp", optional = true }
 eframe = "0.37"
 quick-xml = "0.42"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

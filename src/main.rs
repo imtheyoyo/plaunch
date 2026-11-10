@@ -35,10 +35,18 @@ mod xml;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Premier argument de la ligne de commande, hors options du serveur MCP
+/// (`--mcp…`, voir docs/MCP.md).
+fn first_arg() -> Option<std::ffi::OsString> {
+    std::env::args_os()
+        .skip(1)
+        .find(|a| !a.to_str().is_some_and(|s| s.starts_with("--mcp")))
+}
+
 /// Cherche le fichier de configuration : argument de ligne de commande,
 /// sinon `PLaunch.xml` à côté de l'exécutable, sinon dans le dossier courant.
 fn find_config() -> Option<PathBuf> {
-    if let Some(arg) = std::env::args_os().nth(1) {
+    if let Some(arg) = first_arg() {
         return Some(PathBuf::from(arg));
     }
     let candidates = [
@@ -59,6 +67,35 @@ fn main() -> eframe::Result {
         eject::run_helper(drive, pid);
         return Ok(());
     }
+    // Passerelle stdio pour les clients MCP qui lancent un programme
+    // (Claude Desktop) : relaie vers l'instance pilotable, lancée au besoin.
+    #[cfg(feature = "mcp")]
+    if args.iter().any(|a| a == "--mcp-stdio") {
+        let mcp_args = args.iter().map(|a| {
+            if a == "--mcp-stdio" {
+                "--mcp"
+            } else {
+                a.as_str()
+            }
+        });
+        // Port par défaut de PLaunch : 47800 (egui_mcp::DEFAULT_PORT).
+        let (port, token) =
+            egui_mcp::parse_args(mcp_args).unwrap_or((egui_mcp::DEFAULT_PORT, None));
+        let launch = || {
+            let mut cmd = std::process::Command::new(std::env::current_exe()?);
+            cmd.arg(format!("--mcp={port}"));
+            if let Some(t) = &token {
+                cmd.arg(format!("--mcp-token={t}"));
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|_| ())
+        };
+        let _ = egui_mcp::stdio::run_bridge(port, token.as_deref(), launch);
+        return Ok(());
+    }
     // Après une mise à jour, l'ancienne instance met un instant à se fermer.
     let restarted = std::env::var_os(update::RESTART_ENV).is_some();
     let mut acquired = instance::acquire();
@@ -70,6 +107,9 @@ fn main() -> eframe::Result {
         acquired = instance::acquire();
     }
     if !acquired {
+        if args.iter().any(|a| a.starts_with("--mcp")) {
+            log::error("mode MCP : une instance de PLaunch est déjà ouverte, la fermer d'abord");
+        }
         window::activate_existing();
         return Ok(());
     }
@@ -92,7 +132,7 @@ fn main() -> eframe::Result {
     // Avant la création du menu de notification.
     menutheme::apply(settings.theme);
     // Sans fichier demandé : dernier profil utilisé dans ce dossier.
-    if std::env::args_os().nth(1).is_none() {
+    if first_arg().is_none() {
         if let (Some(f), Some(last)) = (&file, &settings.last_profile) {
             let candidate = f.with_file_name(last);
             if candidate.is_file() && profiles::is_profile(&candidate) {

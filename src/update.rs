@@ -13,7 +13,11 @@ use crate::i18n::{tr, trf};
 
 const API: &str = "https://api.github.com/repos/imtheyoyo/plaunch/releases/latest";
 pub const RELEASES_PAGE: &str = "https://github.com/imtheyoyo/plaunch/releases";
+#[cfg(not(feature = "mcp"))]
 const ASSET: &str = "plaunch.exe";
+/// La variante pilotable par une IA se met à jour avec sa propre version.
+#[cfg(feature = "mcp")]
+const ASSET: &str = "plaunch-mcp.exe";
 /// Variable posée lors d'une relance : la nouvelle instance attend que
 /// l'ancienne ait libéré le verrou d'instance unique.
 pub const RESTART_ENV: &str = "PLAUNCH_RESTARTED";
@@ -296,16 +300,18 @@ mod tests {
     fn release_json() {
         let json = r#"{"tag_name":"v0.7.0","html_url":"https://example/r",
             "assets":[{"name":"autre.zip","browser_download_url":"https://x/a"},
-                      {"name":"plaunch.exe","browser_download_url":"https://x/p.exe"}]}"#;
-        let r = parse_release(json).unwrap();
+                      {"name":"ASSET","browser_download_url":"https://x/p.exe"}]}"#
+            .replace("ASSET", ASSET);
+        let r = parse_release(&json).unwrap();
         assert_eq!(r.version, "v0.7.0");
         assert_eq!(r.url, "https://x/p.exe");
         assert_eq!(r.checksum_url, None);
         let json = r#"{"tag_name":"v0.7.0","assets":[
-            {"name":"plaunch.exe","browser_download_url":"https://x/p.exe"},
-            {"name":"plaunch.exe.sha256","browser_download_url":"https://x/p.sha"}]}"#;
+            {"name":"ASSET","browser_download_url":"https://x/p.exe"},
+            {"name":"ASSET.sha256","browser_download_url":"https://x/p.sha"}]}"#
+            .replace("ASSET", ASSET);
         assert_eq!(
-            parse_release(json).unwrap().checksum_url.as_deref(),
+            parse_release(&json).unwrap().checksum_url.as_deref(),
             Some("https://x/p.sha")
         );
         assert!(parse_release(r#"{"tag_name":"v1","assets":[]}"#).is_err());

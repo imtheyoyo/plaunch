@@ -997,6 +997,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-mcp"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "png",
+ "serde_json",
+]
+
+[[package]]
 name = "egui-wgpu"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3106,6 +3115,7 @@ version = "0.11.0"
 dependencies = [
  "chrono",
  "eframe",
+ "egui-mcp",
  "global-hotkey",
  "native-tls",
  "quick-xml 0.42.0",

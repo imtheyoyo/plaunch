@@ -233,6 +233,13 @@ cargo run --release
 cargo test
 ```
 
+Variante pilotable par une IA pour les tests (serveur MCP, voir
+[docs/MCP.md](docs/MCP.md)) :
+
+```powershell
+cargo run --release --features mcp -- --mcp
+```
+
 Pour vérifier l'aller-retour sans perte sur votre propre fichier :
 
 ```powershell
@@ -272,6 +279,7 @@ cargo test -- --ignored
 | `monitor.rs`, `usage.rs` | Programmes ouverts et temps d'utilisation |
 | `profiles.rs` | Profils (plusieurs fichiers de raccourcis) |
 | `drivecheck.rs` | Vérification du lecteur (lecture seule, place libre) |
+| `app/mcp.rs`, `crates/egui-mcp` | Pilotage par une IA pour les tests (fonctionnalité `mcp`, [docs/MCP.md](docs/MCP.md)) |
 
 ## Journal des modifications
 
