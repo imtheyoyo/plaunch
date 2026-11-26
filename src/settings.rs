@@ -14,12 +14,12 @@ pub const FILE_NAME: &str = "plaunch.ini";
 /// Thème de l'interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Theme {
-    #[default]
     System,
     Light,
     Dark,
     /// Style « Moderne » (façon Windows 11) qui suit le mode clair/sombre
     /// de Windows.
+    #[default]
     Modern,
 }
 

@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{Duration, NaiveDateTime};
 
@@ -50,8 +51,12 @@ impl Repeat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+static NEXT_NOTE_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone)]
 pub struct Note {
+    /// Identifiant en mémoire pour stabiliser les widgets egui (non sérialisé).
+    pub id: u64,
     pub title: String,
     pub text: String,
     /// Couleur de fond (RVB).
@@ -62,9 +67,21 @@ pub struct Note {
     pub alarm_input: String,
 }
 
+impl PartialEq for Note {
+    fn eq(&self, other: &Self) -> bool {
+        self.title == other.title
+            && self.text == other.text
+            && self.color == other.color
+            && self.alarm == other.alarm
+            && self.repeat == other.repeat
+            && self.alarm_input == other.alarm_input
+    }
+}
+
 impl Note {
     pub fn new(color: [u8; 3]) -> Note {
         Note {
+            id: NEXT_NOTE_ID.fetch_add(1, Ordering::Relaxed),
             title: String::new(),
             text: String::new(),
             color,
@@ -126,7 +143,8 @@ impl Notes {
     pub fn load(file: &Path) -> Result<Notes, String> {
         let items = match fs::read_to_string(file) {
             Ok(text) => parse(&text)?,
-            Err(_) => Vec::new(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(format!("{} : {e}", file.display())),
         };
         Ok(Notes {
             file: file.to_path_buf(),
@@ -144,20 +162,31 @@ impl Notes {
 
     /// Renvoie les notes dont l'alarme est échue et reprogramme les alarmes
     /// répétitives (les alarmes uniques sont effacées).
+    #[cfg(test)]
     pub fn take_due(&mut self, now: NaiveDateTime) -> Vec<Note> {
+        self.take_due_with_next(now)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect()
+    }
+
+    /// Comme `take_due`, en retournant aussi la prochaine date programmée de
+    /// chaque alarme déclenchée sans ambiguïté entre notes identiques.
+    pub fn take_due_with_next(&mut self, now: NaiveDateTime) -> Vec<(Note, Option<NaiveDateTime>)> {
         let mut fired = Vec::new();
         for note in &mut self.items {
             let Some(at) = note.alarm else { continue };
             if at > now {
                 continue;
             }
-            fired.push(note.clone());
+            let snapshot = note.clone();
             note.alarm = match note.repeat {
                 Repeat::Once => None,
                 Repeat::Daily => Some(next_after(at, Duration::days(1), now)),
                 Repeat::Weekly => Some(next_after(at, Duration::weeks(1), now)),
             };
             note.sync_input();
+            fired.push((snapshot, note.alarm));
         }
         fired
     }
@@ -268,5 +297,20 @@ mod tests {
         assert_eq!(notes.items[1].alarm_input, "2026/10/19 07:00");
         assert_eq!(notes.items[2].alarm, Some(t("2026/10/18 23:00")));
         assert!(notes.take_due(now).is_empty());
+    }
+
+    #[test]
+    fn load_distinguishes_missing_from_directory_error() {
+        let dir = std::env::temp_dir().join(format!("plaunch-notes-err-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // Fichier absent : Ok avec liste vide.
+        assert!(Notes::load(&dir.join("absent.xml"))
+            .unwrap()
+            .items
+            .is_empty());
+        // Répertoire passé à la place d'un fichier : erreur I/O remontée.
+        assert!(Notes::load(&dir).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

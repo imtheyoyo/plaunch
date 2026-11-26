@@ -61,10 +61,15 @@ pub fn follow_system() {
 
 #[cfg(windows)]
 mod imp {
+    use std::sync::OnceLock;
+
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
     use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+
+    type SetPreferredAppModeFn = unsafe extern "system" fn(i32) -> i32;
+    type FlushMenuThemesFn = unsafe extern "system" fn();
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(Some(0)).collect()
@@ -91,21 +96,33 @@ mod imp {
         r == ERROR_SUCCESS && data == 0
     }
 
-    pub fn set_mode(mode: i32) {
-        // SAFETY : fonctions chargées par ordinal depuis uxtheme.dll ; en
-        // leur absence (ancien Windows), rien n'est appelé.
-        unsafe {
+    fn uxtheme() -> Option<(Option<SetPreferredAppModeFn>, Option<FlushMenuThemesFn>)> {
+        static PROCS: OnceLock<Option<(Option<SetPreferredAppModeFn>, Option<FlushMenuThemesFn>)>> =
+            OnceLock::new();
+        *PROCS.get_or_init(|| unsafe {
             let lib = LoadLibraryW(wide("uxtheme.dll").as_ptr());
             if lib.is_null() {
-                return;
+                return None;
             }
-            if let Some(f) = GetProcAddress(lib, 135usize as *const u8) {
-                let set_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(f);
-                set_mode(mode);
-            }
-            if let Some(f) = GetProcAddress(lib, 136usize as *const u8) {
-                let flush: unsafe extern "system" fn() = std::mem::transmute(f);
-                flush();
+            let set_mode = GetProcAddress(lib, 135usize as *const u8)
+                .map(|f| std::mem::transmute::<_, SetPreferredAppModeFn>(f));
+            let flush = GetProcAddress(lib, 136usize as *const u8)
+                .map(|f| std::mem::transmute::<_, FlushMenuThemesFn>(f));
+            Some((set_mode, flush))
+        })
+    }
+
+    pub fn set_mode(mode: i32) {
+        // SAFETY : fonctions chargées par ordinal depuis uxtheme.dll une seule
+        // fois ; en leur absence (ancien Windows), rien n'est appelé.
+        if let Some((set_mode, flush)) = uxtheme() {
+            unsafe {
+                if let Some(f) = set_mode {
+                    f(mode);
+                }
+                if let Some(f) = flush {
+                    f();
+                }
             }
         }
     }

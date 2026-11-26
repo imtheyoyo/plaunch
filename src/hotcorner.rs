@@ -74,6 +74,9 @@ impl Corner {
     /// Le point `(x, y)` est-il dans la zone, sur un écran `w`×`h` ?
     /// `size` est la taille des coins ; un bord se déclenche contre l'écran.
     pub fn contains(self, x: i32, y: i32, w: i32, h: i32, size: i32) -> bool {
+        if x < 0 || y < 0 || x >= w || y >= h {
+            return false;
+        }
         let left = x < size;
         let right = x >= w - size;
         let top = y < size;
@@ -203,6 +206,10 @@ mod tests {
         assert!(!Corner::Top.contains(5, 0, w, h, s)); // c'est un coin
         assert!(Corner::Right.contains(1919, 500, w, h, s));
         assert!(!Corner::None.contains(0, 0, w, h, s));
+        // Coordonnées hors de l'écran principal (écran secondaire à gauche ou au-dessus).
+        assert!(!Corner::TopLeft.contains(-10, 0, w, h, s));
+        assert!(!Corner::Left.contains(-1, 500, w, h, s));
+        assert!(!Corner::Top.contains(500, -1, w, h, s));
     }
 
     #[test]

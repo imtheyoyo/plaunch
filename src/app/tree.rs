@@ -131,7 +131,8 @@ impl Rows<'_> {
                         .filter(|i| !i.trim().is_empty())
                         .map(|i| paths::resolve(i, &cfg.base_dir))
                         .and_then(|t| self.textures.get(&t));
-                    let id = ui.make_persistent_id(("plaunch-group", path.clone()));
+                    let id = ui.make_persistent_id(("plaunch-group", path.as_slice()));
+                    let tok = modern::tokens(ui.visuals());
                     let mut state =
                         egui::collapsing_header::CollapsingState::load_with_default_open(
                             ui.ctx(),
@@ -143,6 +144,15 @@ impl Rows<'_> {
                         .show_header(ui, |ui| {
                             if let Some(tex) = icon {
                                 ui.add(icon_image(tex, ICON_SIZE));
+                            } else {
+                                ui.label(
+                                    egui::RichText::new(if open {
+                                        icon::FOLDER_OPEN
+                                    } else {
+                                        icon::FOLDER
+                                    })
+                                    .color(tok.accent),
+                                );
                             }
                             ui.selectable_label(selected, title)
                         })
@@ -154,7 +164,8 @@ impl Rows<'_> {
                     if selected && self.scroll_to {
                         header.scroll_to_me(None);
                     }
-                    if toggle.clicked() || header.clicked() {
+                    let plain = ui.input(|i| !i.modifiers.command && !i.modifiers.shift);
+                    if toggle.clicked() || (header.clicked() && plain) {
                         actions.push(Action::ToggleGroup(key));
                     }
                     self.group_header(ui, &header, path, actions);
@@ -396,6 +407,7 @@ impl Rows<'_> {
         favorite: bool,
         actions: &mut Vec<Action>,
     ) -> egui::Response {
+        let tok = modern::tokens(ui.visuals());
         let missing = self.exists.get(target) == Some(&false);
         let is_selected =
             self.selected.as_deref() == Some(path) || self.multi.iter().any(|p| p == path);
@@ -403,75 +415,87 @@ impl Rows<'_> {
         let mut text = egui::RichText::new(name);
         if missing {
             text = text.color(ui.visuals().weak_text_color()).strikethrough();
+        } else if is_selected {
+            text = text.strong();
         }
-        ui.horizontal(|ui| {
-            self.icon(ui, target);
-            let mut resp = ui.selectable_label(is_selected, text);
-            if running {
-                ui.colored_label(egui::Color32::from_rgb(46, 170, 90), "●")
-                    .on_hover_text(tr("En cours d'exécution"));
-            }
-            if draggable {
-                resp = resp.interact(egui::Sense::drag());
-                resp.dnd_set_drag_payload(DragItem(path.to_vec()));
-            }
-            resp = resp.on_hover_ui(|ui| self.tooltip(ui, path, target, missing, running));
-            if is_selected && self.scroll_to {
-                resp.scroll_to_me(None);
-            }
-            if favorite {
-                ui.weak("★");
-            }
-            if let Some(info) = info {
-                if !info.is_empty() {
-                    ui.weak(info);
+        let row_resp = ui
+            .horizontal(|ui| {
+                ui.set_min_height(24.0);
+                self.icon(ui, target);
+                let mut resp = ui.selectable_label(is_selected, text);
+                if running {
+                    ui.colored_label(tok.success, icon::CIRCLE_FILL)
+                        .on_hover_text(tr("En cours d'exécution"));
                 }
-            }
-            let plain = ui.input(|i| !i.modifiers.command && !i.modifiers.shift);
-            if resp.double_clicked() || (self.single && resp.clicked() && plain) {
-                actions.push(Action::Launch(path.to_vec()));
-            } else if resp.clicked() {
-                actions.push(click_action(ui, path));
-            }
-            resp.context_menu(|ui| {
-                if ui.button(tr("Lancer")).clicked() {
+                if draggable {
+                    resp = resp.interact(egui::Sense::drag());
+                    resp.dnd_set_drag_payload(DragItem(path.to_vec()));
+                }
+                resp = resp.on_hover_ui(|ui| self.tooltip(ui, path, target, missing, running));
+                if is_selected && self.scroll_to {
+                    resp.scroll_to_me(None);
+                }
+                if favorite {
+                    ui.colored_label(tok.star, icon::STAR_FILL);
+                }
+                if let Some(info) = info {
+                    if !info.is_empty() {
+                        ui.weak(info);
+                    }
+                }
+                let plain = ui.input(|i| !i.modifiers.command && !i.modifiers.shift);
+                if resp.double_clicked() || (self.single && resp.clicked() && plain) {
                     actions.push(Action::Launch(path.to_vec()));
-                    ui.close();
+                } else if resp.clicked() {
+                    actions.push(click_action(ui, path));
                 }
-                if running && ui.button(tr("Lancer une autre instance")).clicked() {
-                    actions.push(Action::LaunchNew(path.to_vec()));
-                    ui.close();
-                }
-                if ui.button(tr("Ouvrir l'emplacement")).clicked() {
-                    actions.push(Action::Reveal(path.to_vec()));
-                    ui.close();
-                }
-                let pin = if favorite {
-                    tr("Retirer des favoris")
-                } else {
-                    tr("Ajouter aux favoris")
-                };
-                if ui.button(pin).clicked() {
-                    actions.push(Action::ToggleFavorite(path.to_vec()));
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button(tr("Modifier…")).clicked() {
-                    actions.push(Action::Edit(path.to_vec()));
-                    ui.close();
-                }
-                if ui.button(tr("Dupliquer")).clicked() {
-                    actions.push(Action::Duplicate(path.to_vec()));
-                    ui.close();
-                }
-                if ui.button(tr("Supprimer…")).clicked() {
-                    actions.push(Action::AskDelete(path.to_vec()));
-                    ui.close();
-                }
-            });
-            resp
-        })
-        .inner
+                resp.context_menu(|ui| {
+                    if ui.button(tr("Lancer")).clicked() {
+                        actions.push(Action::Launch(path.to_vec()));
+                        ui.close();
+                    }
+                    if running && ui.button(tr("Lancer une autre instance")).clicked() {
+                        actions.push(Action::LaunchNew(path.to_vec()));
+                        ui.close();
+                    }
+                    if ui.button(tr("Ouvrir l'emplacement")).clicked() {
+                        actions.push(Action::Reveal(path.to_vec()));
+                        ui.close();
+                    }
+                    let pin = if favorite {
+                        tr("Retirer des favoris")
+                    } else {
+                        tr("Ajouter aux favoris")
+                    };
+                    if ui.button(pin).clicked() {
+                        actions.push(Action::ToggleFavorite(path.to_vec()));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button(tr("Modifier…")).clicked() {
+                        actions.push(Action::Edit(path.to_vec()));
+                        ui.close();
+                    }
+                    if ui.button(tr("Dupliquer")).clicked() {
+                        actions.push(Action::Duplicate(path.to_vec()));
+                        ui.close();
+                    }
+                    if ui.button(tr("Supprimer…")).clicked() {
+                        actions.push(Action::AskDelete(path.to_vec()));
+                        ui.close();
+                    }
+                });
+                resp
+            })
+            .inner;
+        if is_selected {
+            let bar = egui::Rect::from_min_size(
+                egui::pos2(row_resp.rect.left() - 2.0, row_resp.rect.top() + 3.0),
+                egui::vec2(3.0, (row_resp.rect.height() - 6.0).max(6.0)),
+            );
+            ui.painter().rect_filled(bar, 1.5, tok.accent);
+        }
+        row_resp
     }
 
     pub(super) fn start_item(

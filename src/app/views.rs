@@ -10,26 +10,106 @@ impl PLaunchApp {
         cfg: Option<&Config>,
     ) {
         let compact = self.settings.compact;
+        let tok = modern::tokens(ui.visuals());
+        let can_eject = cfg.is_some() && self.shared.eject_drive().is_some();
+
         ui.horizontal(|ui| {
             if compact {
                 // Mode compact : vues et boutons regroupés dans un menu.
-                ui.menu_button("☰", |ui| {
+                ui.menu_button(icon::LIST, |ui| {
                     for v in View::ALL {
-                        if ui.selectable_label(self.view == v, v.label()).clicked() {
+                        if ui
+                            .selectable_label(self.view == v, icon::with(v.icon(), v.label()))
+                            .clicked()
+                        {
                             self.view = v;
                             ui.close();
                         }
                     }
                     ui.separator();
-                    if ui.button(tr("Nouveau raccourci…")).clicked() {
-                        actions.push(Action::NewEntry(None));
-                        ui.close();
+                    if cfg.is_some() {
+                        if ui
+                            .button(icon::with(icon::PLUS, tr("Nouveau raccourci…")))
+                            .clicked()
+                        {
+                            actions.push(Action::NewEntry(None));
+                            ui.close();
+                        }
+                        if ui
+                            .button(icon::with(icon::FOLDER, tr("Nouveau groupe…")))
+                            .clicked()
+                        {
+                            actions.push(Action::NewGroup(None));
+                            ui.close();
+                        }
+                        if ui.button(tr("Nouveau lien web…")).clicked() {
+                            actions.push(Action::NewLink(None));
+                            ui.close();
+                        }
+                        if ui.button(tr("Séparateur")).clicked() {
+                            actions.push(Action::NewSeparator(None));
+                            ui.close();
+                        }
+                        ui.separator();
+                        let can_undo = !self.shared.undo.lock().unwrap().is_empty();
+                        let can_redo = !self.shared.redo.lock().unwrap().is_empty();
+                        if ui
+                            .add_enabled(
+                                can_undo,
+                                egui::Button::new(icon::with(
+                                    icon::ARROW_ARC_LEFT,
+                                    tr("Annuler (Ctrl+Z)"),
+                                )),
+                            )
+                            .clicked()
+                        {
+                            actions.push(Action::Undo);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                can_redo,
+                                egui::Button::new(icon::with(
+                                    icon::ARROW_ARC_RIGHT,
+                                    tr("Rétablir (Ctrl+Y)"),
+                                )),
+                            )
+                            .clicked()
+                        {
+                            actions.push(Action::Redo);
+                            ui.close();
+                        }
+                        if ui
+                            .button(icon::with(
+                                icon::ARROW_CLOCKWISE,
+                                tr("Recharger le fichier"),
+                            ))
+                            .clicked()
+                        {
+                            actions.push(Action::Reload);
+                            ui.close();
+                        }
+                        if can_eject
+                            && ui
+                                .button(icon::with(icon::EJECT, tr("Éjecter la clé…")))
+                                .clicked()
+                        {
+                            actions.push(Action::AskEject);
+                            ui.close();
+                        }
+                        ui.separator();
                     }
-                    if ui.button(tr("Réglages")).clicked() {
+                    if ui
+                        .button(icon::with(icon::GEAR_SIX, tr("Réglages")))
+                        .clicked()
+                    {
                         actions.push(Action::OpenSettings);
                         ui.close();
                     }
-                    if ui.button(tr("Fenêtre complète")).clicked() {
+                    if ui
+                        .button(icon::with(icon::ARROWS_OUT_SIMPLE, tr("Fenêtre complète")))
+                        .clicked()
+                    {
                         actions.push(Action::ToggleCompact);
                         ui.close();
                     }
@@ -37,14 +117,30 @@ impl PLaunchApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if !compact {
-                    if ui.button("⚙").on_hover_text(tr("Réglages")).clicked() {
+                    if ui
+                        .button(icon::GEAR_SIX)
+                        .on_hover_text(tr("Réglages"))
+                        .clicked()
+                    {
                         actions.push(Action::OpenSettings);
                     }
-                    if ui.button("◧").on_hover_text(tr("Mode compact")).clicked() {
+                    if ui
+                        .button(icon::ARROWS_IN_SIMPLE)
+                        .on_hover_text(tr("Mode compact"))
+                        .clicked()
+                    {
                         actions.push(Action::ToggleCompact);
                     }
+                    if can_eject
+                        && ui
+                            .button(icon::EJECT)
+                            .on_hover_text(tr("Éjecter la clé…"))
+                            .clicked()
+                    {
+                        actions.push(Action::AskEject);
+                    }
                     if ui
-                        .button("⟳")
+                        .button(icon::ARROW_CLOCKWISE)
                         .on_hover_text(tr("Recharger le fichier"))
                         .clicked()
                     {
@@ -53,21 +149,21 @@ impl PLaunchApp {
                     let can_redo = !self.shared.redo.lock().unwrap().is_empty();
                     let can_undo = !self.shared.undo.lock().unwrap().is_empty();
                     if ui
-                        .add_enabled(can_redo, egui::Button::new("↷"))
+                        .add_enabled(can_redo, egui::Button::new(icon::ARROW_ARC_RIGHT))
                         .on_hover_text(tr("Rétablir (Ctrl+Y)"))
                         .clicked()
                     {
                         actions.push(Action::Redo);
                     }
                     if ui
-                        .add_enabled(can_undo, egui::Button::new("↶"))
+                        .add_enabled(can_undo, egui::Button::new(icon::ARROW_ARC_LEFT))
                         .on_hover_text(tr("Annuler (Ctrl+Z)"))
                         .clicked()
                     {
                         actions.push(Action::Undo);
                     }
                     ui.add_enabled_ui(cfg.is_some(), |ui| {
-                        ui.menu_button("＋", |ui| {
+                        ui.menu_button(icon::PLUS, |ui| {
                             if ui.button(tr("Nouveau raccourci…")).clicked() {
                                 actions.push(Action::NewEntry(None));
                             }
@@ -92,23 +188,110 @@ impl PLaunchApp {
                         .on_hover_text(tr("Ajouter (vous pouvez aussi déposer des fichiers ici)"));
                     });
                 }
-                let search = egui::TextEdit::singleline(&mut self.search)
-                    .hint_text(tr("Rechercher… (Ctrl+F)"))
-                    .desired_width(ui.available_width());
-                let resp = ui.add(search);
-                self.search_id = Some(resp.id);
-                if self.focus_search {
-                    resp.request_focus();
-                    self.focus_search = false;
-                }
+
+                // Omnibar de recherche moderne.
+                let focused = self
+                    .search_id
+                    .is_some_and(|id| ui.ctx().memory(|m| m.has_focus(id)));
+                let stroke = if focused {
+                    egui::Stroke::new(1.5, tok.accent)
+                } else {
+                    egui::Stroke::new(1.0, tok.border)
+                };
+                egui::Frame::new()
+                    .fill(tok.field)
+                    .stroke(stroke)
+                    .corner_radius(8.0)
+                    .inner_margin(egui::Margin::symmetric(8, 4))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(icon::MAGNIFYING_GLASS).color(if focused {
+                                    tok.accent
+                                } else {
+                                    tok.text_muted
+                                }),
+                            );
+                            let clear_w = if self.search.is_empty() { 0.0 } else { 22.0 };
+                            let resp = ui.add(
+                                egui::TextEdit::singleline(&mut self.search)
+                                    .frame(egui::Frame::NONE)
+                                    .hint_text(tr("Rechercher… (Ctrl+F)"))
+                                    .desired_width((ui.available_width() - clear_w).max(60.0)),
+                            );
+                            self.search_id = Some(resp.id);
+                            if self.focus_search {
+                                resp.request_focus();
+                                self.focus_search = false;
+                            }
+                            if !self.search.is_empty()
+                                && ui
+                                    .add(egui::Button::new(icon::X).frame(false))
+                                    .on_hover_text(tr("Effacer la recherche"))
+                                    .clicked()
+                            {
+                                self.search.clear();
+                                resp.request_focus();
+                            }
+                        });
+                    });
             });
         });
+
         if !compact {
-            ui.horizontal_wrapped(|ui| {
-                for v in View::ALL {
-                    ui.selectable_value(&mut self.view, v, v.label());
-                }
-            });
+            ui.add_space(4.0);
+            let alarms_count = self
+                .shared
+                .notes
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map_or(0, |n| n.items.iter().filter(|i| i.alarm.is_some()).count());
+            let missing_count = self
+                .index
+                .entries
+                .iter()
+                .filter(|e| self.exists.get(&e.entry.target) == Some(&false))
+                .count();
+            egui::Frame::new()
+                .fill(tok.field)
+                .corner_radius(8.0)
+                .inner_margin(3.0)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        for v in View::ALL {
+                            let active = self.view == v;
+                            let mut text = icon::with(v.icon(), v.label());
+                            if v == View::Notes && alarms_count > 0 {
+                                text.push_str(&format!(" ({alarms_count})"));
+                            } else if v == View::Stats && missing_count > 0 {
+                                text.push_str(&format!(" ({missing_count})"));
+                            }
+                            let rich = if active {
+                                egui::RichText::new(text).strong().color(tok.text_strong)
+                            } else {
+                                egui::RichText::new(text).color(tok.text_muted)
+                            };
+                            let btn = egui::Button::new(rich)
+                                .fill(if active {
+                                    tok.accent_soft
+                                } else {
+                                    egui::Color32::TRANSPARENT
+                                })
+                                .stroke(if active {
+                                    egui::Stroke::new(1.0, tok.accent.gamma_multiply(0.45))
+                                } else {
+                                    egui::Stroke::NONE
+                                })
+                                .corner_radius(6.0);
+                            if ui.add(btn).clicked() {
+                                self.view = v;
+                            }
+                        }
+                    });
+                });
         }
         if let Some(cfg) = cfg {
             self.favorites_bar(ui, cfg, actions);
@@ -117,17 +300,24 @@ impl PLaunchApp {
             ui.add_space(2.0);
             egui::Frame::new()
                 .fill(ui.visuals().warn_fg_color.gamma_multiply(0.18))
-                .corner_radius(4.0)
+                .corner_radius(6.0)
                 .inner_margin(6.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
                             for w in &self.drive_warnings {
-                                ui.colored_label(ui.visuals().warn_fg_color, format!("⚠ {w}"));
+                                ui.colored_label(
+                                    ui.visuals().warn_fg_color,
+                                    icon::with(icon::WARNING, w),
+                                );
                             }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                            if ui.small_button("✖").on_hover_text(tr("Masquer")).clicked() {
+                            if ui
+                                .small_button(icon::X)
+                                .on_hover_text(tr("Masquer"))
+                                .clicked()
+                            {
                                 actions.push(Action::DismissDriveWarnings);
                             }
                         });
@@ -163,106 +353,143 @@ impl PLaunchApp {
         .on_hover_text(tr("Profil : fichier de raccourcis utilisé"));
     }
 
-    /// Barre des favoris : icônes (ou initiales) cliquables.
+    /// Barre des favoris : icônes (ou initiales) cliquables dans un dock épuré.
     pub(super) fn favorites_bar(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
-        let favorites = Self::favorites(cfg);
-        let groups = cfg.favorite_groups();
+        let favorites = &self.index.favorites;
+        let groups = &self.index.favorite_groups;
         if favorites.is_empty() && groups.is_empty() {
             return;
         }
-        ui.add_space(2.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            for (i, e) in favorites.iter().enumerate() {
-                let tip = if i < 9 {
-                    format!("{}  (Ctrl+{})", e.name, i + 1)
-                } else {
-                    e.name.clone()
-                };
-                let resp = match self.textures.get(&e.target) {
-                    Some(tex) => ui.add(egui::Button::image(icon_image(tex, 20.0))),
-                    None => {
-                        let initial: String = e.name.chars().take(2).collect();
-                        ui.add(egui::Button::new(initial).min_size(egui::vec2(28.0, 28.0)))
-                    }
-                };
-                let resp = resp
-                    .on_hover_text(format!("{tip}\n{}", tr("Glisser pour déplacer")))
-                    .interact(egui::Sense::drag());
-                if resp.clicked() {
-                    actions.push(Action::Launch(e.path.clone()));
-                }
-                // Glisser-déposer pour changer l'ordre.
-                resp.dnd_set_drag_payload(FavDrag(i));
-                if let Some(from) = resp.dnd_hover_payload::<FavDrag>() {
-                    if from.0 != i {
-                        let x = if from.0 < i {
-                            resp.rect.right()
+        let tok = modern::tokens(ui.visuals());
+        let running = self.shared.running.lock().unwrap();
+        let ctrl_held = ui.input(|i| i.modifiers.command);
+        ui.add_space(4.0);
+        egui::Frame::new()
+            .fill(tok.card)
+            .stroke(egui::Stroke::new(1.0, tok.border))
+            .corner_radius(8.0)
+            .inner_margin(egui::Margin::symmetric(8, 5))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 5.0;
+                    for (i, e) in favorites.iter().enumerate() {
+                        let tip = if i < 9 {
+                            format!("{}  (Ctrl+{})", e.name, i + 1)
                         } else {
-                            resp.rect.left()
+                            e.name.clone()
                         };
-                        ui.painter()
-                            .vline(x, resp.rect.y_range(), ui.visuals().selection.stroke);
+                        let is_running = running.contains_key(&crate::eject::path_key(&e.target));
+                        let resp = match self.textures.get(&e.target) {
+                            Some(tex) => ui.add(
+                                egui::Button::image(icon_image(tex, 20.0))
+                                    .min_size(egui::vec2(30.0, 30.0)),
+                            ),
+                            None => {
+                                let initial: String = e.name.chars().take(2).collect();
+                                ui.add(egui::Button::new(initial).min_size(egui::vec2(30.0, 30.0)))
+                            }
+                        };
+                        if is_running {
+                            let dot = egui::pos2(resp.rect.right() - 5.0, resp.rect.top() + 5.0);
+                            ui.painter().circle_filled(dot, 3.0, tok.success);
+                        }
+                        if ctrl_held && i < 9 {
+                            ui.painter().text(
+                                egui::pos2(resp.rect.right() - 3.0, resp.rect.bottom() - 2.0),
+                                egui::Align2::RIGHT_BOTTOM,
+                                (i + 1).to_string(),
+                                egui::FontId::proportional(9.0),
+                                tok.accent,
+                            );
+                        }
+                        let resp = resp
+                            .on_hover_text(format!("{tip}\n{}", tr("Glisser pour déplacer")))
+                            .interact(egui::Sense::drag());
+                        if resp.clicked() {
+                            actions.push(Action::Launch(e.path.clone()));
+                        }
+                        // Glisser-déposer pour changer l'ordre.
+                        resp.dnd_set_drag_payload(FavDrag(i));
+                        if let Some(from) = resp.dnd_hover_payload::<FavDrag>() {
+                            if from.0 != i {
+                                let x = if from.0 < i {
+                                    resp.rect.right()
+                                } else {
+                                    resp.rect.left()
+                                };
+                                ui.painter().vline(
+                                    x,
+                                    resp.rect.y_range(),
+                                    ui.visuals().selection.stroke,
+                                );
+                            }
+                        }
+                        if let Some(from) = resp.dnd_release_payload::<FavDrag>() {
+                            actions.push(Action::MoveFavorite {
+                                from: from.0,
+                                to: i,
+                            });
+                        }
+                        let count = favorites.len();
+                        resp.context_menu(|ui| {
+                            if ui
+                                .add_enabled(i > 0, egui::Button::new(tr("◀ Déplacer à gauche")))
+                                .clicked()
+                            {
+                                actions.push(Action::MoveFavorite { from: i, to: i - 1 });
+                                ui.close();
+                            }
+                            if ui
+                                .add_enabled(
+                                    i + 1 < count,
+                                    egui::Button::new(tr("Déplacer à droite ▶")),
+                                )
+                                .clicked()
+                            {
+                                actions.push(Action::MoveFavorite { from: i, to: i + 1 });
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button(tr("Retirer des favoris")).clicked() {
+                                actions.push(Action::ToggleFavorite(e.path.clone()));
+                                ui.close();
+                            }
+                            if ui.button(tr("Modifier…")).clicked() {
+                                actions.push(Action::Edit(e.path.clone()));
+                                ui.close();
+                            }
+                        });
                     }
-                }
-                if let Some(from) = resp.dnd_release_payload::<FavDrag>() {
-                    actions.push(Action::MoveFavorite {
-                        from: from.0,
-                        to: i,
-                    });
-                }
-                let count = favorites.len();
-                resp.context_menu(|ui| {
-                    if ui
-                        .add_enabled(i > 0, egui::Button::new(tr("◀ Déplacer à gauche")))
-                        .clicked()
-                    {
-                        actions.push(Action::MoveFavorite { from: i, to: i - 1 });
-                        ui.close();
-                    }
-                    if ui
-                        .add_enabled(i + 1 < count, egui::Button::new(tr("Déplacer à droite ▶")))
-                        .clicked()
-                    {
-                        actions.push(Action::MoveFavorite { from: i, to: i + 1 });
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button(tr("Retirer des favoris")).clicked() {
-                        actions.push(Action::ToggleFavorite(e.path.clone()));
-                        ui.close();
-                    }
-                    if ui.button(tr("Modifier…")).clicked() {
-                        actions.push(Action::Edit(e.path.clone()));
-                        ui.close();
+                    // Groupes épinglés : menu déroulant de leur contenu.
+                    for g in groups {
+                        let Some(el) = cfg.item(g) else { continue };
+                        let label = icon::with(
+                            icon::FOLDER,
+                            format!("{} {}", config::display_name(el), icon::CARET_DOWN),
+                        );
+                        let resp = ui
+                            .menu_button(label, |ui| {
+                                if ui.button(tr("▶ Tout lancer")).clicked() {
+                                    actions.push(Action::LaunchGroup {
+                                        path: g.clone(),
+                                        confirmed: false,
+                                    });
+                                    ui.close();
+                                }
+                                ui.separator();
+                                self.group_menu(ui, cfg, el, g, actions);
+                                ui.separator();
+                                if ui.button(tr("Retirer de la barre")).clicked() {
+                                    actions.push(Action::ToggleGroupFavorite(g.clone()));
+                                    ui.close();
+                                }
+                            })
+                            .response;
+                        resp.on_hover_text(tr("Groupe épinglé : cliquer pour ouvrir"));
                     }
                 });
-            }
-            // Groupes épinglés : menu déroulant de leur contenu.
-            for g in &groups {
-                let Some(el) = cfg.item(g) else { continue };
-                let label = format!("📁 {} ▾", config::display_name(el));
-                let resp = ui
-                    .menu_button(label, |ui| {
-                        if ui.button(tr("▶ Tout lancer")).clicked() {
-                            actions.push(Action::LaunchGroup {
-                                path: g.clone(),
-                                confirmed: false,
-                            });
-                            ui.close();
-                        }
-                        ui.separator();
-                        self.group_menu(ui, cfg, el, g, actions);
-                        ui.separator();
-                        if ui.button(tr("Retirer de la barre")).clicked() {
-                            actions.push(Action::ToggleGroupFavorite(g.clone()));
-                            ui.close();
-                        }
-                    })
-                    .response;
-                resp.on_hover_text(tr("Groupe épinglé : cliquer pour ouvrir"));
-            }
-        });
+            });
     }
 
     /// Contenu d'un groupe en menus imbriqués (barre des favoris).
@@ -364,19 +591,12 @@ impl PLaunchApp {
                         }
                     }
                     View::MostUsed => {
-                        let mut all = cfg.flatten();
-                        all.retain(|e| e.runcount > 0);
-                        all.sort_by_key(|e| std::cmp::Reverse(e.runcount));
-                        for e in all.iter().take(40) {
+                        for e in self.index.most_used.iter().take(40) {
                             rows.flat(ui, e, false, &mut actions);
                         }
                     }
                     View::Recent => {
-                        let mut all = cfg.flatten();
-                        all.retain(|e| e.rundate.is_some());
-                        // Le format AAAA/MM/JJ HH:MM:SS se trie comme du texte.
-                        all.sort_by(|a, b| b.rundate.cmp(&a.rundate));
-                        for e in all.iter().take(40) {
+                        for e in self.index.recent.iter().take(40) {
                             rows.flat(ui, e, false, &mut actions);
                         }
                     }
@@ -409,13 +629,44 @@ impl PLaunchApp {
             ));
         }
         let mut delete = None;
-        for (i, note) in notes.items.iter_mut().enumerate() {
-            let (c, del) = note_card(ui, i, note, &palette);
-            changed |= c;
-            if del {
-                delete = Some(i);
+        let two_cols = ui.available_width() >= 480.0 && notes.items.len() > 1;
+        if two_cols {
+            let mut left = Vec::new();
+            let mut right = Vec::new();
+            for (i, n) in notes.items.iter_mut().enumerate() {
+                if i % 2 == 0 {
+                    left.push((i, n));
+                } else {
+                    right.push((i, n));
+                }
             }
-            ui.add_space(6.0);
+            ui.columns(2, |cols| {
+                for (i, note) in left {
+                    let (c, del) = note_card(&mut cols[0], note, &palette);
+                    changed |= c;
+                    if del {
+                        delete = Some(i);
+                    }
+                    cols[0].add_space(8.0);
+                }
+                for (i, note) in right {
+                    let (c, del) = note_card(&mut cols[1], note, &palette);
+                    changed |= c;
+                    if del {
+                        delete = Some(i);
+                    }
+                    cols[1].add_space(8.0);
+                }
+            });
+        } else {
+            for (i, note) in notes.items.iter_mut().enumerate() {
+                let (c, del) = note_card(ui, note, &palette);
+                changed |= c;
+                if del {
+                    delete = Some(i);
+                }
+                ui.add_space(6.0);
+            }
         }
         if let Some(i) = delete {
             notes.items.remove(i);
@@ -437,7 +688,7 @@ impl PLaunchApp {
         let opts = cfg.search_options();
         let mut any = false;
         if opts.plaunch {
-            let hits = plaunch_hits(cfg, query);
+            let hits = plaunch_hits(&self.index, query);
             if !hits.is_empty() {
                 any = true;
                 section(ui, "PLaunch", tag_color(&opts, None, ui));
@@ -447,6 +698,11 @@ impl PLaunchApp {
             }
         }
         let start = self.shared.start_menu.lock().unwrap();
+        let all_start = if opts.current_user || opts.all_users {
+            start_hits(&start, query)
+        } else {
+            Vec::new()
+        };
         for source in [Source::CurrentUser, Source::AllUsers] {
             let enabled = match source {
                 Source::CurrentUser => opts.current_user,
@@ -455,8 +711,9 @@ impl PLaunchApp {
             if !enabled {
                 continue;
             }
-            let hits: Vec<&StartItem> = start_hits(&start, query)
-                .into_iter()
+            let hits: Vec<&StartItem> = all_start
+                .iter()
+                .copied()
                 .filter(|i| i.source == source)
                 .collect();
             if hits.is_empty() {
@@ -560,110 +817,188 @@ impl PLaunchApp {
             });
             return actions;
         }
+        let tok = modern::tokens(ui.visuals());
         let target = cfg.resolve(el);
         let opts = EntryOptions::of(el);
-        ui.horizontal(|ui| {
-            if let Some(tex) = self.textures.get(&target) {
-                ui.add(icon_image(tex, 32.0));
-            }
-            ui.heading(config::display_name(el));
-        });
-        if !opts.description.is_empty() {
-            ui.add(egui::Label::new(egui::RichText::new(&opts.description).italics()).wrap());
-        }
-        ui.add_space(6.0);
-        egui::Grid::new("details")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
+        let is_running = self
+            .shared
+            .running
+            .lock()
+            .unwrap()
+            .contains_key(&crate::eject::path_key(&target));
+        let exists_state = self.exists.get(&target).copied();
+
+        egui::Frame::new()
+            .fill(tok.card)
+            .stroke(egui::Stroke::new(1.0, tok.border))
+            .corner_radius(8.0)
+            .inner_margin(10.0)
             .show(ui, |ui| {
-                ui.label(tr("Chemin"));
-                ui.add(egui::Label::new(config::entry_path(el)).wrap());
-                ui.end_row();
-                ui.label(tr("Cible"));
-                ui.add(egui::Label::new(&target).wrap());
-                ui.end_row();
-                if !opts.parameters.is_empty() {
-                    ui.label(tr("Paramètres"));
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    match self.textures.get(&target) {
+                        Some(tex) => {
+                            ui.add(icon_image(tex, 36.0));
+                        }
+                        None => {
+                            ui.label(
+                                egui::RichText::new(icon::ROCKET_LAUNCH)
+                                    .size(28.0)
+                                    .color(tok.accent),
+                            );
+                        }
+                    }
+                    ui.vertical(|ui| {
+                        ui.heading(config::display_name(el));
+                        if is_running {
+                            ui.colored_label(
+                                tok.success,
+                                icon::with(icon::CIRCLE_FILL, tr("En cours d'exécution")),
+                            );
+                        } else if exists_state == Some(false) {
+                            ui.colored_label(
+                                tok.warning,
+                                icon::with(icon::WARNING, tr("Cible introuvable")),
+                            );
+                        }
+                    });
+                });
+                if !opts.description.is_empty() {
+                    ui.add_space(4.0);
                     ui.add(
-                        egui::Label::new(egui::RichText::new(&opts.parameters).monospace()).wrap(),
+                        egui::Label::new(egui::RichText::new(&opts.description).italics()).wrap(),
                     );
-                    ui.end_row();
-                }
-                if let Some(dir) = cfg.working_dir(el) {
-                    ui.label(tr("Dossier"));
-                    ui.add(egui::Label::new(dir).wrap());
-                    ui.end_row();
-                }
-                let mut flags = Vec::new();
-                if opts.admin {
-                    flags.push(tr("administrateur"));
-                }
-                if opts.window != WindowState::Normal {
-                    flags.push(opts.window.label());
-                }
-                if opts.autorun {
-                    flags.push(tr("au démarrage"));
-                }
-                if !opts.hotkey.is_empty() {
-                    ui.label(tr("Raccourci clavier"));
-                    ui.label(&opts.hotkey);
-                    ui.end_row();
-                }
-                if !flags.is_empty() {
-                    ui.label(tr("Options"));
-                    ui.label(flags.join(", "));
-                    ui.end_row();
-                }
-                ui.label(tr("État"));
-                match self.exists.get(&target) {
-                    Some(true) => ui.label(tr("présent")),
-                    Some(false) => ui.colored_label(ui.visuals().warn_fg_color, tr("introuvable")),
-                    None => ui.weak(tr("vérification…")),
-                };
-                ui.end_row();
-                ui.label(tr("Lancements"));
-                ui.label(config::runcount(el).to_string());
-                ui.end_row();
-                ui.label(tr("Dernier"));
-                ui.label(el.child_text("rundate").unwrap_or(tr("jamais")));
-                ui.end_row();
-                let used = self
-                    .shared
-                    .usage
-                    .lock()
-                    .unwrap()
-                    .get(&crate::usage::key(config::entry_path(el)))
-                    .copied()
-                    .unwrap_or(0);
-                if used > 0 {
-                    ui.label(tr("Utilisation"));
-                    ui.label(crate::usage::format_duration(used));
-                    ui.end_row();
                 }
             });
-        ui.add_space(10.0);
+
+        ui.add_space(8.0);
+        let launch_btn = egui::Button::new(
+            egui::RichText::new(icon::with(icon::PLAY_FILL, tr("Lancer")))
+                .color(egui::Color32::WHITE)
+                .strong(),
+        )
+        .fill(tok.accent)
+        .corner_radius(6.0)
+        .min_size(egui::vec2(ui.available_width(), 30.0));
+        if ui.add(launch_btn).clicked() {
+            actions.push(Action::Launch(sel.clone()));
+        }
+
+        ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            if ui.button(tr("▶ Lancer")).clicked() {
-                actions.push(Action::Launch(sel.clone()));
-            }
-            if ui.button(tr("Modifier…")).clicked() {
+            if ui
+                .button(icon::with(icon::PENCIL_SIMPLE, tr("Modifier…")))
+                .clicked()
+            {
                 actions.push(Action::Edit(sel.clone()));
             }
-            if ui.button(tr("Emplacement")).clicked() {
+            if ui
+                .button(icon::with(icon::FOLDER_OPEN, tr("Emplacement")))
+                .clicked()
+            {
                 actions.push(Action::Reveal(sel.clone()));
             }
+            if ui
+                .button(icon::with(icon::COPY, tr("Copier le chemin")))
+                .clicked()
+            {
+                actions.push(Action::CopyPath(target.clone()));
+            }
             let pin = if opts.favorite {
-                tr("★ Retirer des favoris")
+                icon::with(icon::STAR_FILL, tr("Retirer des favoris"))
             } else {
-                tr("☆ Ajouter aux favoris")
+                icon::with(icon::STAR, tr("Ajouter aux favoris"))
             };
             if ui.button(pin).clicked() {
                 actions.push(Action::ToggleFavorite(sel.clone()));
             }
-            if ui.button(tr("Supprimer")).clicked() {
+            if ui
+                .button(icon::with(icon::TRASH, tr("Supprimer")))
+                .clicked()
+            {
                 actions.push(Action::AskDelete(sel.clone()));
             }
         });
+
+        ui.add_space(8.0);
+        egui::Frame::new()
+            .fill(tok.card)
+            .stroke(egui::Stroke::new(1.0, tok.border))
+            .corner_radius(8.0)
+            .inner_margin(10.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                egui::Grid::new("details")
+                    .num_columns(2)
+                    .spacing([8.0, 5.0])
+                    .show(ui, |ui| {
+                        ui.weak(tr("Chemin"));
+                        ui.add(egui::Label::new(config::entry_path(el)).wrap());
+                        ui.end_row();
+                        ui.weak(tr("Cible"));
+                        ui.add(egui::Label::new(&target).wrap());
+                        ui.end_row();
+                        if !opts.parameters.is_empty() {
+                            ui.weak(tr("Paramètres"));
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&opts.parameters).monospace())
+                                    .wrap(),
+                            );
+                            ui.end_row();
+                        }
+                        if let Some(dir) = cfg.working_dir(el) {
+                            ui.weak(tr("Dossier"));
+                            ui.add(egui::Label::new(dir).wrap());
+                            ui.end_row();
+                        }
+                        let mut flags = Vec::new();
+                        if opts.admin {
+                            flags.push(tr("administrateur"));
+                        }
+                        if opts.window != WindowState::Normal {
+                            flags.push(opts.window.label());
+                        }
+                        if opts.autorun {
+                            flags.push(tr("au démarrage"));
+                        }
+                        if !opts.hotkey.is_empty() {
+                            ui.weak(tr("Raccourci clavier"));
+                            ui.label(&opts.hotkey);
+                            ui.end_row();
+                        }
+                        if !flags.is_empty() {
+                            ui.weak(tr("Options"));
+                            ui.label(flags.join(", "));
+                            ui.end_row();
+                        }
+                        ui.weak(tr("État"));
+                        match exists_state {
+                            Some(true) => ui.colored_label(tok.success, tr("présent")),
+                            Some(false) => ui.colored_label(tok.warning, tr("introuvable")),
+                            None => ui.weak(tr("vérification…")),
+                        };
+                        ui.end_row();
+                        ui.weak(tr("Lancements"));
+                        ui.label(config::runcount(el).to_string());
+                        ui.end_row();
+                        ui.weak(tr("Dernier"));
+                        ui.label(el.child_text("rundate").unwrap_or(tr("jamais")));
+                        ui.end_row();
+                        let used = self
+                            .shared
+                            .usage
+                            .lock()
+                            .unwrap()
+                            .get(&crate::usage::key(config::entry_path(el)))
+                            .copied()
+                            .unwrap_or(0);
+                        if used > 0 {
+                            ui.weak(tr("Utilisation"));
+                            ui.label(crate::usage::format_duration(used));
+                            ui.end_row();
+                        }
+                    });
+            });
         actions
     }
 
@@ -742,14 +1077,20 @@ impl PLaunchApp {
 
 /// Raccourcis correspondant à la recherche, du plus pertinent au moins
 /// pertinent (tolérance aux fautes, initiales, usage).
-pub(super) fn plaunch_hits(cfg: &Config, query: &str) -> Vec<config::FlatEntry> {
-    let mut hits: Vec<(i32, config::FlatEntry)> = cfg
-        .flatten()
-        .into_iter()
-        .filter_map(|e| fuzzy::rank(query, &e.name, &e.target, e.runcount).map(|s| (s, e)))
+pub(super) fn plaunch_hits(index: &CachedIndex, query: &str) -> Vec<config::FlatEntry> {
+    let mut hits: Vec<(i32, &config::FlatEntry)> = index
+        .entries
+        .iter()
+        .filter_map(|c| {
+            fuzzy::rank_folded(query, &c.folded_name, &c.folded_target, c.entry.runcount)
+                .map(|s| (s, &c.entry))
+        })
         .collect();
     hits.sort_by_key(|h| std::cmp::Reverse(h.0));
-    hits.into_iter().take(MAX_HITS).map(|(_, e)| e).collect()
+    hits.into_iter()
+        .take(MAX_HITS)
+        .map(|(_, e)| e.clone())
+        .collect()
 }
 
 pub(super) fn start_hits<'a>(items: &'a [StartItem], query: &str) -> Vec<&'a StartItem> {

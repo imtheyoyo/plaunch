@@ -25,14 +25,21 @@ pub fn score(query: &str, name: &str) -> Option<i32> {
     if query.is_empty() {
         return Some(0);
     }
-    let name = fold(name);
+    score_folded(query, &fold(name))
+}
+
+/// Comme [`score`], à partir d'un nom déjà normalisé par [`fold`].
+pub fn score_folded(query: &str, name: &str) -> Option<i32> {
+    if query.is_empty() {
+        return Some(0);
+    }
     if name == query {
         return Some(1000);
     }
     if name.starts_with(query) {
         return Some(900 - name.len() as i32);
     }
-    let words = words(&name);
+    let words = words(name);
     if words.iter().any(|w| w.starts_with(query)) {
         return Some(800 - name.len() as i32);
     }
@@ -48,7 +55,7 @@ pub fn score(query: &str, name: &str) -> Option<i32> {
         return Some(600);
     }
     // Lettres dans l'ordre, au début des mots de préférence.
-    if let Some(gaps) = subsequence(query, &name) {
+    if let Some(gaps) = subsequence(query, name) {
         if query.chars().count() >= 2 {
             return Some(500 - gaps.min(200) as i32);
         }
@@ -115,38 +122,53 @@ fn subsequence(query: &str, name: &str) -> Option<usize> {
     Some(gaps)
 }
 
-/// Distance de Damerau-Levenshtein (transpositions comprises).
+/// Distance de Damerau-Levenshtein (transpositions comprises), avec trois
+/// lignes glissantes pour limiter les allocations.
 pub fn distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     let (n, m) = (a.len(), b.len());
-    let mut d = vec![vec![0usize; m + 1]; n + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        row[0] = i;
+    if n == 0 {
+        return m;
     }
-    for (j, cell) in d[0].iter_mut().enumerate() {
-        *cell = j;
+    if m == 0 {
+        return n;
     }
+    let mut prev2 = vec![0usize; m + 1];
+    let mut prev1: Vec<usize> = (0..=m).collect();
+    let mut curr = vec![0usize; m + 1];
     for i in 1..=n {
+        curr[0] = i;
         for j in 1..=m {
             let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + cost);
+            curr[j] = (prev1[j] + 1).min(curr[j - 1] + 1).min(prev1[j - 1] + cost);
             if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+                curr[j] = curr[j].min(prev2[j - 2] + 1);
             }
         }
+        std::mem::swap(&mut prev2, &mut prev1);
+        std::mem::swap(&mut prev1, &mut curr);
     }
-    d[n][m]
+    prev1[m]
 }
 
 /// Score final d'un raccourci : correspondance du nom (ou à défaut du
 /// chemin) plus un bonus d'usage.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn rank(query: &str, name: &str, target: &str, runcount: u32) -> Option<i32> {
-    let s = score(query, name).or_else(|| {
+    rank_folded(query, &fold(name), &fold(target), runcount)
+}
+
+/// Variante utilisant des chaînes déjà normalisées par [`fold`].
+pub fn rank_folded(
+    query: &str,
+    folded_name: &str,
+    folded_target: &str,
+    runcount: u32,
+) -> Option<i32> {
+    let s = score_folded(query, folded_name).or_else(|| {
         // Le chemin n'est cherché qu'en sous-chaîne, avec un score faible.
-        fold(target).contains(query).then_some(200)
+        folded_target.contains(query).then_some(200)
     })?;
     let usage = (((runcount as f32) + 1.0).ln() * 15.0) as i32;
     Some(s + usage.min(120))

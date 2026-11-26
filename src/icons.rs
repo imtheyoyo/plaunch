@@ -312,26 +312,47 @@ fn in_triangle(x: f32, y: f32, a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> b
 /// Lance l'extraction des icônes en tâche de fond. `generation` permet
 /// d'abandonner le travail si le fichier est rechargé entre-temps.
 pub fn spawn_loader(targets: Vec<String>, shared: Arc<Shared>, generation: u64) {
-    std::thread::spawn(move || {
-        imp::init_thread();
-        let mut seen = HashSet::new();
-        for (n, target) in targets.into_iter().enumerate() {
-            if shared.generation.load(Ordering::SeqCst) != generation {
-                return;
+    let mut seen = HashSet::new();
+    let unique: Vec<String> = targets
+        .into_iter()
+        .filter(|t| seen.insert(t.clone()))
+        .collect();
+    if unique.is_empty() {
+        return;
+    }
+    let workers = if unique.len() > 24 { 2 } else { 1 };
+    let queue = Arc::new(unique);
+    let cursor = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let remaining = Arc::new(std::sync::atomic::AtomicUsize::new(workers));
+    for _ in 0..workers {
+        let queue = queue.clone();
+        let cursor = cursor.clone();
+        let remaining = remaining.clone();
+        let shared = shared.clone();
+        std::thread::spawn(move || {
+            imp::init_thread();
+            loop {
+                if shared.generation.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                let idx = cursor.fetch_add(1, Ordering::Relaxed);
+                let Some(target) = queue.get(idx) else {
+                    break;
+                };
+                if let Some(img) = imp::extract(target) {
+                    shared.icons.lock().unwrap().insert(target.clone(), img);
+                    shared.icon_seq.fetch_add(1, Ordering::SeqCst);
+                }
+                if idx % 16 == 15 {
+                    shared.repaint();
+                }
             }
-            if !seen.insert(target.clone()) {
-                continue;
-            }
-            if let Some(img) = imp::extract(&target) {
-                shared.icons.lock().unwrap().insert(target, img);
-            }
-            if n % 16 == 15 {
+            if remaining.fetch_sub(1, Ordering::SeqCst) == 1 {
+                shared.icons_version.fetch_add(1, Ordering::SeqCst);
                 shared.repaint();
             }
-        }
-        shared.icons_version.fetch_add(1, Ordering::SeqCst);
-        shared.repaint();
-    });
+        });
+    }
 }
 
 #[cfg(windows)]

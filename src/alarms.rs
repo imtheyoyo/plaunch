@@ -69,25 +69,16 @@ fn check(shared: &Shared) {
     let fired = {
         let mut guard = shared.notes.lock().unwrap();
         let Some(notes) = guard.as_mut() else { return };
-        let fired = notes.take_due(now);
+        let fired = notes.take_due_with_next(now);
         if !fired.is_empty() {
             if let Err(e) = notes.save() {
                 shared.error(e);
             }
         }
-        // État des alarmes après reprogrammation, pour le message.
-        let next: Vec<Option<String>> = fired
-            .iter()
-            .map(|f| {
-                notes
-                    .items
-                    .iter()
-                    .find(|n| n.title == f.title && n.text == f.text)
-                    .and_then(|n| n.alarm)
-                    .map(|a| a.format(INPUT_FORMAT).to_string())
-            })
-            .collect();
-        fired.into_iter().zip(next).collect::<Vec<_>>()
+        fired
+            .into_iter()
+            .map(|(note, next)| (note, next.map(|a| a.format(INPUT_FORMAT).to_string())))
+            .collect::<Vec<_>>()
     };
     for (note, next) in fired {
         let title = display_title(&note);

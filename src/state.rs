@@ -28,6 +28,10 @@ pub struct Shared {
     pub generation: AtomicU64,
     /// Incrémenté à chaque modification de l'arborescence.
     pub structure_version: AtomicU64,
+    /// Incrémenté à chaque lancement (compteurs `runcount` / `rundate`).
+    pub stats_version: AtomicU64,
+    /// Incrémenté à chaque nouvelle icône ajoutée au cache.
+    pub icon_seq: AtomicU64,
     /// Raccourcis du menu Démarrer (pour la recherche).
     pub start_menu: Mutex<Vec<StartItem>>,
     /// Coin actif : zone, délai (ms), taille (px), sur tous les écrans.
@@ -138,6 +142,7 @@ impl Shared {
                     if let Some(el) = cfg.item_mut(path) {
                         config::record_run(el, &now);
                     }
+                    self.stats_version.fetch_add(1, Ordering::SeqCst);
                     match cfg.save() {
                         Ok(()) => trf("Lancé : {}", &[&name]),
                         Err(e) => trf(
@@ -258,5 +263,13 @@ impl Shared {
 
     pub fn next_generation(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn ui_version(&self) -> (u64, u64, u64) {
+        (
+            self.generation.load(Ordering::SeqCst),
+            self.structure_version.load(Ordering::SeqCst),
+            self.stats_version.load(Ordering::SeqCst),
+        )
     }
 }

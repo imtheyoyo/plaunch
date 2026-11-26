@@ -310,42 +310,58 @@ pub fn set_favorite(cfg: &mut Config, path: &[usize], on: bool) -> Result<(), St
     Ok(())
 }
 
-/// Remplace la lettre de lecteur `old` par `new` dans les chemins absolus
-/// (`<path>` et `<directory>`). Renvoie le nombre de balises modifiées.
-pub fn retarget_drive(cfg: &mut Config, old: char, new: char) -> usize {
-    let mut n = 0;
-    visit_entries(files_mut(cfg), &mut |el| {
-        for c in el.children.iter_mut() {
-            if c.name == "path" || c.name == "directory" {
-                if let Some(t) = crate::paths::replace_drive(&c.text, old, new) {
-                    c.text = t;
-                    n += 1;
+/// Parcourt tous les chemins configurés : attribut `icon` des groupes, ainsi
+/// que les balises `<path>` et `<directory>` des raccourcis.
+fn visit_paths(el: &mut Element, f: &mut impl FnMut(&mut String)) {
+    for c in el.children.iter_mut() {
+        match c.name.as_str() {
+            "files" => {
+                if let Some((_, v)) = c.attrs.iter_mut().find(|(k, _)| k == "icon") {
+                    f(v);
+                }
+                visit_paths(c, f);
+            }
+            "file" => {
+                for tag in c.children.iter_mut() {
+                    if tag.name == "path" || tag.name == "directory" {
+                        f(&mut tag.text);
+                    }
                 }
             }
+            _ => {}
+        }
+    }
+}
+
+/// Remplace la lettre de lecteur `old` par `new` dans les chemins absolus
+/// (`<path>`, `<directory>` et attribut `icon` des groupes). Renvoie le
+/// nombre de valeurs modifiées.
+pub fn retarget_drive(cfg: &mut Config, old: char, new: char) -> usize {
+    let mut n = 0;
+    visit_paths(files_mut(cfg), &mut |raw| {
+        if let Some(t) = crate::paths::replace_drive(raw, old, new) {
+            *raw = t;
+            n += 1;
         }
     });
     n
 }
 
 /// Rend relatifs les chemins absolus situés sur le lecteur de PLaunch.xml
-/// (portables d'une lettre à l'autre). Renvoie le nombre de balises changées.
+/// (portables d'une lettre à l'autre). Renvoie le nombre de valeurs changées.
 pub fn make_portable(cfg: &mut Config) -> usize {
     let base = cfg.base_dir.clone();
     let Some(letter) = crate::paths::drive_letter(&base) else {
         return 0;
     };
     let mut n = 0;
-    visit_entries(files_mut(cfg), &mut |el| {
-        for c in el.children.iter_mut() {
-            if (c.name == "path" || c.name == "directory")
-                && crate::paths::drive_letter(c.text.trim()) == Some(letter)
-                && !crate::paths::is_url(&c.text)
-            {
-                let rel = crate::paths::make_relative(c.text.trim(), &base);
-                if rel != c.text {
-                    c.text = rel;
-                    n += 1;
-                }
+    visit_paths(files_mut(cfg), &mut |raw| {
+        let trimmed = raw.trim();
+        if crate::paths::drive_letter(trimmed) == Some(letter) && !crate::paths::is_url(trimmed) {
+            let rel = crate::paths::make_relative(trimmed, &base);
+            if rel != *raw {
+                *raw = rel;
+                n += 1;
             }
         }
     });
@@ -364,22 +380,20 @@ pub fn count_drive_refs(cfg: &Config, letter: char) -> usize {
 fn count_refs(el: &Element, letter: char, n: &mut usize) {
     for c in &el.children {
         match c.name.as_str() {
-            "files" | "file" => count_refs(c, letter, n),
+            "files" => {
+                if let Some(icon) = c.attr("icon") {
+                    if crate::paths::replace_drive(icon, letter, letter).is_some() {
+                        *n += 1;
+                    }
+                }
+                count_refs(c, letter, n);
+            }
+            "file" => count_refs(c, letter, n),
             "path" | "directory"
                 if crate::paths::replace_drive(&c.text, letter, letter).is_some() =>
             {
                 *n += 1;
             }
-            _ => {}
-        }
-    }
-}
-
-fn visit_entries(el: &mut Element, f: &mut impl FnMut(&mut Element)) {
-    for c in el.children.iter_mut() {
-        match c.name.as_str() {
-            "files" => visit_entries(c, f),
-            "file" => f(c),
             _ => {}
         }
     }
@@ -617,14 +631,19 @@ mod tests {
     #[test]
     fn drive_letters() {
         let mut c = cfg();
-        // Fixture : PowerISO sous C:\ (chemin et dossier).
-        assert_eq!(count_drive_refs(&c, 'C'), 2);
+        set_group_icon(&mut c, &[1], Some("C:\\Icons\\music.ico")).unwrap();
+        // Fixture : PowerISO sous C:\ (chemin et dossier) + icône du groupe Musique.
+        assert_eq!(count_drive_refs(&c, 'C'), 3);
         assert_eq!(count_drive_refs(&c, 'F'), 0);
-        assert_eq!(retarget_drive(&mut c, 'c', 'D'), 2);
+        assert_eq!(retarget_drive(&mut c, 'c', 'D'), 3);
         let el = c.item(&[2, 0]).unwrap();
         assert_eq!(
             el.child_text("path"),
             Some("D:\\Program Files (x86)\\PowerISO\\PowerISO.exe")
+        );
+        assert_eq!(
+            c.item(&[1]).unwrap().attr("icon"),
+            Some("D:\\Icons\\music.ico")
         );
         assert_eq!(count_drive_refs(&c, 'C'), 0);
     }

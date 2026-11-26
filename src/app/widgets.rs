@@ -84,6 +84,9 @@ pub fn hotkey_capture(ui: &mut egui::Ui, value: &mut String, salt: &str) -> bool
             capturing = false;
             changed = true;
         }
+        if capturing && ui.input(|i| i.pointer.any_pressed()) && !resp.hovered() {
+            capturing = false;
+        }
         if capturing {
             let pressed = ui.input(|i| {
                 i.events.iter().find_map(|e| match e {
