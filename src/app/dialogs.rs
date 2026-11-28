@@ -366,32 +366,45 @@ pub(super) fn form_ui(
 }
 
 /// Carte d'une note. Renvoie (modifiée, à supprimer).
-pub(super) fn note_card(
-    ui: &mut egui::Ui,
-    i: usize,
-    note: &mut Note,
-    palette: &[[u8; 3]],
-) -> (bool, bool) {
+pub(super) fn note_card(ui: &mut egui::Ui, note: &mut Note, palette: &[[u8; 3]]) -> (bool, bool) {
     let [r, g, b] = note.color;
-    let fill = egui::Color32::from_rgb(r, g, b);
-    let ink = egui::Color32::from_gray(25);
+    let accent = egui::Color32::from_rgb(r, g, b);
+    let tok = modern::tokens(ui.visuals());
+    let fill = if ui.visuals().dark_mode {
+        tok.card
+    } else {
+        lighten(accent)
+    };
+    let ink = if ui.visuals().dark_mode {
+        tok.text_strong
+    } else {
+        egui::Color32::from_gray(25)
+    };
     let mut changed = false;
     let mut delete = false;
-    egui::Frame::new()
+    let frame_resp = egui::Frame::new()
         .fill(fill)
-        .corner_radius(6.0)
-        .inner_margin(8.0)
+        .stroke(egui::Stroke::new(1.0, accent.gamma_multiply(0.65)))
+        .corner_radius(8.0)
+        .inner_margin(egui::Margin {
+            left: 10,
+            right: 10,
+            top: 10,
+            bottom: 8,
+        })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             let v = ui.visuals_mut();
             v.override_text_color = Some(ink);
-            v.extreme_bg_color = lighten(fill);
-            v.widgets.inactive.weak_bg_fill = darken(fill);
-            v.widgets.inactive.bg_fill = darken(fill);
-            v.widgets.hovered.weak_bg_fill = darken(darken(fill));
-            v.widgets.inactive.fg_stroke.color = ink;
-            v.widgets.hovered.fg_stroke.color = ink;
-            v.widgets.active.fg_stroke.color = ink;
+            if !v.dark_mode {
+                v.extreme_bg_color = lighten(accent);
+                v.widgets.inactive.weak_bg_fill = darken(accent);
+                v.widgets.inactive.bg_fill = darken(accent);
+                v.widgets.hovered.weak_bg_fill = darken(darken(accent));
+                v.widgets.inactive.fg_stroke.color = ink;
+                v.widgets.hovered.fg_stroke.color = ink;
+                v.widgets.active.fg_stroke.color = ink;
+            }
             changed |= ui
                 .add(
                     egui::TextEdit::singleline(&mut note.title)
@@ -413,11 +426,11 @@ pub(super) fn note_card(
                     let color = egui::Color32::from_rgb(c[0], c[1], c[2]);
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
-                    ui.painter().rect_filled(rect, 3.0, color);
+                    ui.painter().rect_filled(rect, 4.0, color);
                     let stroke_w = if c == note.color { 2.0 } else { 1.0 };
                     ui.painter().rect_stroke(
                         rect,
-                        3.0,
+                        4.0,
                         egui::Stroke::new(stroke_w, ink),
                         egui::StrokeKind::Inside,
                     );
@@ -427,11 +440,14 @@ pub(super) fn note_card(
                     }
                 }
                 ui.add_space(8.0);
-                if ui.small_button(tr("Supprimer")).clicked() {
+                if ui
+                    .small_button(icon::with(icon::TRASH, tr("Supprimer")))
+                    .clicked()
+                {
                     delete = true;
                 }
             });
-            if widgets::alarm_editor(ui, &mut note.alarm, i) {
+            if widgets::alarm_editor(ui, &mut note.alarm, note.id as usize) {
                 note.sync_input();
                 changed = true;
             }
@@ -439,7 +455,7 @@ pub(super) fn note_card(
                 ui.horizontal(|ui| {
                     ui.label(tr("Répéter"));
                     let before = note.repeat;
-                    egui::ComboBox::from_id_salt(("repeat", i))
+                    egui::ComboBox::from_id_salt(("repeat", note.id))
                         .selected_text(note.repeat.label())
                         .show_ui(ui, |ui| {
                             for r in Repeat::ALL {
@@ -450,6 +466,21 @@ pub(super) fn note_card(
                 });
             }
         });
+    // Liseré de couleur en haut de la carte.
+    let strip = egui::Rect::from_min_size(
+        frame_resp.response.rect.min,
+        egui::vec2(frame_resp.response.rect.width(), 3.0),
+    );
+    ui.painter().rect_filled(
+        strip,
+        egui::CornerRadius {
+            nw: 8,
+            ne: 8,
+            sw: 0,
+            se: 0,
+        },
+        accent,
+    );
     (changed, delete)
 }
 

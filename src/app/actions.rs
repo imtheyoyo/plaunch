@@ -208,8 +208,11 @@ impl PLaunchApp {
             }
             Action::Browse(kind) => self.browse(kind),
             Action::SubmitForm => self.submit_form(),
-            Action::CloseDialog => self.dialog = None,
+            Action::CloseDialog => {
+                self.dialog = self.stashed_settings.take().map(Dialog::Settings);
+            }
             Action::OpenSettings => {
+                self.stashed_settings = None;
                 self.dialog = Some(Dialog::Settings(SettingsForm {
                     settings: self.settings.clone(),
                     autostart: autostart::is_enabled(),
@@ -235,14 +238,8 @@ impl PLaunchApp {
                 }
             }
             Action::LaunchFavorite(n) => {
-                let path = {
-                    let guard = self.shared.config.lock().unwrap();
-                    guard
-                        .as_ref()
-                        .and_then(|c| Self::favorites(c).into_iter().nth(n))
-                        .map(|e| e.path)
-                };
-                if let Some(p) = path {
+                if let Some(e) = self.index.favorites.get(n) {
+                    let p = e.path.clone();
                     self.apply(Action::Launch(p));
                 }
             }
@@ -257,6 +254,9 @@ impl PLaunchApp {
                 }
             }
             Action::OpenDriveFix => {
+                if let Some(Dialog::Settings(form)) = self.dialog.take() {
+                    self.stashed_settings = Some(form);
+                }
                 let current = self
                     .config_file()
                     .and_then(|f| paths::drive_letter(&f.to_string_lossy()));
@@ -266,6 +266,7 @@ impl PLaunchApp {
                 });
             }
             Action::FixDrive { old, new } => {
+                let stashed = self.stashed_settings.take();
                 self.dialog = None;
                 if let Some(n) = self
                     .shared
@@ -283,6 +284,10 @@ impl PLaunchApp {
                     self.reload();
                     self.shared
                         .set_status(trf("{} chemins corrigés ({}: → {}:)", &[&n, &old, &new]));
+                }
+                if let Some(mut form) = stashed {
+                    form.settings.icon_file = self.settings.icon_file.clone();
+                    self.dialog = Some(Dialog::Settings(form));
                 }
             }
             Action::AskCleanup(paths) => {
@@ -390,21 +395,26 @@ impl PLaunchApp {
                 }
             }
             Action::MoveFavorite { from, to } => {
-                let order = {
-                    let guard = self.shared.config.lock().unwrap();
-                    let Some(cfg) = guard.as_ref() else { return };
-                    let mut paths: Vec<ItemPath> =
-                        cfg.favorites().into_iter().map(|e| e.path).collect();
-                    if from >= paths.len() || to >= paths.len() || from == to {
-                        return;
-                    }
-                    let p = paths.remove(from);
-                    paths.insert(to, p);
-                    paths
-                };
-                self.shared.modify(|c| edit::reorder_favorites(c, &order));
+                let mut paths: Vec<ItemPath> = self
+                    .index
+                    .favorites
+                    .iter()
+                    .map(|e| e.path.clone())
+                    .collect();
+                if from >= paths.len() || to >= paths.len() || from == to {
+                    return;
+                }
+                let p = paths.remove(from);
+                paths.insert(to, p);
+                self.shared.modify(|c| edit::reorder_favorites(c, &paths));
             }
             Action::CreateConfig(path) => self.create_config(&path),
+            Action::CopyPath(text) => {
+                if let Some(ctx) = self.shared.ctx.get() {
+                    ctx.copy_text(text);
+                }
+                self.shared.set_status(tr("Chemin copié"));
+            }
             Action::OpenLog => {
                 let path = crate::log::path();
                 if let Err(e) = launcher::launch(&path.to_string_lossy(), None) {
@@ -437,10 +447,15 @@ impl PLaunchApp {
         }
         if let Some(i) = self.multi.iter().position(|p| *p == path) {
             self.multi.remove(i);
+            if self.multi.is_empty() {
+                self.selected = None;
+            } else if self.selected.as_ref() == Some(&path) {
+                self.selected = self.multi.last().cloned();
+            }
         } else {
             self.multi.push(path.clone());
+            self.selected = Some(path);
         }
-        self.selected = Some(path);
     }
 
     /// Montre un élément : groupes parents ouverts, sélection, défilement.
@@ -535,6 +550,9 @@ impl PLaunchApp {
                 .set_status(tr("Le lecteur de PLaunch ne peut pas être éjecté"));
             return;
         };
+        if let Some(Dialog::Settings(form)) = self.dialog.take() {
+            self.stashed_settings = Some(form);
+        }
         self.flush_notes();
         self.dialog = Some(Dialog::Eject {
             drive,

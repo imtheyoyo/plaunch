@@ -3,10 +3,9 @@
 
 use eframe::egui;
 
-use super::{Action, PLaunchApp};
+use super::{modern, Action, PLaunchApp};
 use crate::config::{self, Config, FlatEntry};
 use crate::i18n::{tr, trf};
-use crate::xml::Element;
 
 const TOP: usize = 15;
 
@@ -37,19 +36,12 @@ pub fn activity(entries: &[FlatEntry], now: chrono::NaiveDateTime) -> Activity {
     a
 }
 
-fn count_groups(el: &Element) -> usize {
-    el.children
-        .iter()
-        .filter(|c| c.name == "files")
-        .map(|c| 1 + count_groups(c))
-        .sum()
-}
-
 impl PLaunchApp {
     pub(super) fn stats_view(&self, ui: &mut egui::Ui, cfg: &Config, actions: &mut Vec<Action>) {
-        let entries = cfg.flatten();
+        let tok = modern::tokens(ui.visuals());
+        let entries: Vec<FlatEntry> = self.index.entries.iter().map(|c| c.entry.clone()).collect();
         let total: u64 = entries.iter().map(|e| e.runcount as u64).sum();
-        let groups = cfg.files().map(count_groups).unwrap_or(0);
+        let groups = self.index.groups_count;
         let dead: Vec<&FlatEntry> = entries
             .iter()
             .filter(|e| self.exists.get(&e.target) == Some(&false))
@@ -61,39 +53,55 @@ impl PLaunchApp {
         let act = activity(&entries, chrono::Local::now().naive_local());
 
         ui.heading(tr("Statistiques"));
-        ui.add_space(6.0);
-        egui::Grid::new("stats-totals")
-            .num_columns(2)
-            .spacing([16.0, 4.0])
-            .show(ui, |ui| {
-                ui.label(tr("Raccourcis"));
-                ui.strong(entries.len().to_string());
-                ui.end_row();
-                ui.label(tr("Groupes"));
-                ui.strong(groups.to_string());
-                ui.end_row();
-                ui.label(tr("Lancements enregistrés"));
-                ui.strong(total.to_string());
-                ui.end_row();
-                if let Some(n) = cfg.number(&["execution", "count"]) {
-                    ui.label(tr("Démarrages de PLaunch"));
-                    ui.strong(n.to_string());
-                    ui.end_row();
+        ui.add_space(8.0);
+        let missing_text = if checked < entries.len() {
+            trf("{} (vérification…)", &[&dead.len()])
+        } else {
+            dead.len().to_string()
+        };
+        let kpis = [
+            (tr("Raccourcis"), entries.len().to_string(), None),
+            (tr("Groupes"), groups.to_string(), None),
+            (tr("Lancements enregistrés"), total.to_string(), None),
+            (
+                tr("Introuvables"),
+                missing_text,
+                (!dead.is_empty()).then_some(tok.warning),
+            ),
+        ];
+        let cols = if ui.available_width() >= 420.0 { 4 } else { 2 };
+        ui.columns(cols, |columns| {
+            for (idx, (label, value, color)) in kpis.iter().enumerate() {
+                let col = &mut columns[idx % cols];
+                egui::Frame::new()
+                    .fill(tok.card)
+                    .stroke(egui::Stroke::new(1.0, tok.border))
+                    .corner_radius(8.0)
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(col, |ui| {
+                        ui.set_width(ui.available_width());
+                        let mut v = egui::RichText::new(value).size(18.0).strong();
+                        if let Some(c) = color {
+                            v = v.color(*c);
+                        }
+                        ui.label(v);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(*label).small().weak()).truncate(),
+                        );
+                    });
+                if idx + cols < kpis.len() {
+                    col.add_space(6.0);
                 }
-                ui.label(tr("Introuvables"));
-                if checked < entries.len() {
-                    ui.weak(trf("{} (vérification…)", &[&dead.len()]));
-                } else {
-                    ui.strong(dead.len().to_string());
-                }
-                ui.end_row();
-            });
+            }
+        });
+        if let Some(n) = cfg.number(&["execution", "count"]) {
+            ui.add_space(4.0);
+            ui.weak(format!("{}: {n}", tr("Démarrages de PLaunch")));
+        }
 
         ui.add_space(12.0);
         ui.label(egui::RichText::new(tr("Les plus lancés")).strong());
-        let mut top: Vec<&FlatEntry> = entries.iter().filter(|e| e.runcount > 0).collect();
-        top.sort_by_key(|e| std::cmp::Reverse(e.runcount));
-        top.truncate(TOP);
+        let top: Vec<&FlatEntry> = self.index.most_used.iter().take(TOP).collect();
         if top.is_empty() {
             ui.weak(tr("Aucun lancement enregistré."));
         } else {
@@ -170,7 +178,7 @@ impl PLaunchApp {
         for e in &dead {
             ui.horizontal(|ui| {
                 if ui
-                    .small_button("✖")
+                    .small_button(super::icon::X)
                     .on_hover_text(tr("Supprimer…"))
                     .clicked()
                 {
@@ -240,59 +248,66 @@ fn bar_row_text(
     max: usize,
     icon: Option<&egui::TextureHandle>,
 ) -> egui::Response {
+    let tok = modern::tokens(ui.visuals());
     let width = ui.available_width();
-    let label_w = (width * 0.42).clamp(90.0, 220.0);
-    let h = 20.0;
+    let label_w = (width * 0.40).clamp(90.0, 210.0);
+    let h = 22.0;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
     let painter = ui.painter_at(rect);
     let visuals = ui.visuals();
     if resp.hovered() {
-        painter.rect_filled(rect, 3.0, visuals.widgets.hovered.weak_bg_fill);
+        painter.rect_filled(rect, 5.0, visuals.widgets.hovered.weak_bg_fill);
     }
-    let mut x = rect.left() + 2.0;
+    let mut x = rect.left() + 4.0;
     if let Some(tex) = icon {
-        let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 2.0), egui::vec2(16.0, 16.0));
+        let r = egui::Rect::from_min_size(egui::pos2(x, rect.top() + 3.0), egui::vec2(16.0, 16.0));
         painter.image(
             tex.id(),
             r,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
-        x += 20.0;
+        x += 22.0;
     }
     let font = egui::TextStyle::Body.resolve(ui.style());
     let text_color = visuals.text_color();
     let galley = painter.layout_no_wrap(label.to_string(), font.clone(), text_color);
-    // Libellé sur une seule ligne, coupé s'il est trop long.
     let clip = egui::Rect::from_min_max(
         egui::pos2(x, rect.top()),
-        egui::pos2(rect.left() + label_w - 6.0, rect.bottom()),
+        egui::pos2(rect.left() + label_w - 8.0, rect.bottom()),
     );
     painter.with_clip_rect(clip).galley(
         egui::pos2(x, rect.center().y - galley.size().y / 2.0),
         galley,
         text_color,
     );
+    let val_galley = painter.layout_no_wrap(shown.to_string(), font, visuals.weak_text_color());
+    let val_w = val_galley.size().x + 12.0;
     let bar_left = rect.left() + label_w;
-    let bar_max = (rect.right() - bar_left - 44.0).max(10.0);
+    let bar_max = (rect.right() - bar_left - val_w).max(16.0);
+    let track = egui::Rect::from_min_size(
+        egui::pos2(bar_left, rect.top() + 6.0),
+        egui::vec2(bar_max, h - 12.0),
+    );
+    painter.rect_filled(track, 4.0, tok.field);
     let frac = if max == 0 {
         0.0
     } else {
-        value as f32 / max as f32
+        (value as f32 / max as f32).clamp(0.0, 1.0)
     };
-    let bar = egui::Rect::from_min_size(
-        egui::pos2(bar_left, rect.top() + 4.0),
-        egui::vec2(
-            (bar_max * frac).max(if value > 0 { 2.0 } else { 0.0 }),
-            h - 8.0,
+    if value > 0 {
+        let bar = egui::Rect::from_min_size(
+            track.min,
+            egui::vec2((bar_max * frac).max(4.0), track.height()),
+        );
+        painter.rect_filled(bar, 4.0, tok.accent);
+    }
+    painter.galley(
+        egui::pos2(
+            track.right() + 6.0,
+            rect.center().y - val_galley.size().y / 2.0,
         ),
-    );
-    painter.rect_filled(bar, 3.0, visuals.selection.bg_fill);
-    painter.text(
-        egui::pos2(bar.right() + 6.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        shown,
-        font,
+        val_galley,
         visuals.weak_text_color(),
     );
     resp.on_hover_text(format!("{label} : {shown}"))

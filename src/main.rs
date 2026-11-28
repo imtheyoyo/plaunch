@@ -102,17 +102,19 @@ fn main() -> eframe::Result {
     }
     i18n::set_language(settings.language);
 
-    let size = file
-        .as_deref()
-        .and_then(|f| config::Config::load(f).ok())
+    let initial_config = file.as_deref().map(config::Config::load);
+    let size = initial_config
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
         .and_then(|c| c.window_size())
         .unwrap_or([460.0, 760.0]);
 
     let icon = settings.icon(settings_path.as_deref());
+    let wide_width = size[0].max(560.0);
     let width = if settings.compact {
         app::COMPACT_WIDTH
     } else {
-        size[0].max(560.0)
+        wide_width
     };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
@@ -130,6 +132,14 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "PLaunch",
         options,
-        Box::new(move |cc| Ok(Box::new(app::PLaunchApp::new(cc, file, settings)))),
+        Box::new(move |cc| {
+            Ok(Box::new(app::PLaunchApp::new(
+                cc,
+                file,
+                initial_config,
+                wide_width,
+                settings,
+            )))
+        }),
     )
 }

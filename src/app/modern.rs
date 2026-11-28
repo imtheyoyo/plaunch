@@ -7,6 +7,38 @@ use super::*;
 
 use egui::{Color32, CornerRadius, Margin, Shadow, Stroke, Style, Visuals};
 
+/// Couleurs sémantiques exposées aux vues personnalisées (cartes, badges, barres).
+#[derive(Clone, Copy)]
+pub(super) struct ThemeTokens {
+    pub card: Color32,
+    pub field: Color32,
+    pub border: Color32,
+    pub accent: Color32,
+    pub accent_soft: Color32,
+    pub success: Color32,
+    pub warning: Color32,
+    pub star: Color32,
+    pub text_strong: Color32,
+    pub text_muted: Color32,
+}
+
+/// Renvoie les couleurs adaptées au thème actif (clair ou sombre).
+pub(super) fn tokens(visuals: &Visuals) -> ThemeTokens {
+    let p = if visuals.dark_mode { &DARK } else { &LIGHT };
+    ThemeTokens {
+        card: p.card,
+        field: p.field,
+        border: p.border,
+        accent: p.accent,
+        accent_soft: p.accent_soft,
+        success: p.success,
+        warning: p.warning,
+        star: p.star,
+        text_strong: p.text_strong,
+        text_muted: visuals.weak_text_color(),
+    }
+}
+
 /// Couleurs d'une palette.
 struct Palette {
     dark: bool,
@@ -14,7 +46,9 @@ struct Palette {
     background: Color32,
     /// Fenêtres, menus et bulles.
     surface: Color32,
-    /// Champs de saisie.
+    /// Cartes et bandeaux surélevés.
+    card: Color32,
+    /// Champs de saisie et rails.
     field: Color32,
     /// Fond des widgets au repos.
     widget: Color32,
@@ -29,50 +63,65 @@ struct Palette {
     text: Color32,
     text_strong: Color32,
     accent: Color32,
+    /// Teinte douce pour les éléments sélectionnés.
+    accent_soft: Color32,
     /// Fond d'un élément sélectionné.
     selection: Color32,
     /// Texte d'un élément sélectionné.
     selection_text: Color32,
     link: Color32,
+    success: Color32,
+    warning: Color32,
+    star: Color32,
     shadow: u8,
 }
 
 const DARK: Palette = Palette {
     dark: true,
-    background: Color32::from_rgb(0x1E, 0x1F, 0x24),
-    surface: Color32::from_rgb(0x25, 0x26, 0x2C),
-    field: Color32::from_rgb(0x17, 0x18, 0x1C),
-    widget: Color32::from_rgb(0x2E, 0x30, 0x38),
-    widget_hover: Color32::from_rgb(0x3A, 0x3D, 0x47),
-    widget_press: Color32::from_rgb(0x44, 0x47, 0x52),
-    line: Color32::from_rgb(0x33, 0x35, 0x3D),
-    border: Color32::from_rgb(0x3A, 0x3C, 0x45),
-    text: Color32::from_rgb(0xD9, 0xDB, 0xE1),
-    text_strong: Color32::from_rgb(0xF5, 0xF6, 0xF8),
-    accent: Color32::from_rgb(0x3B, 0x82, 0xF6),
-    selection: Color32::from_rgb(0x24, 0x5A, 0xC0),
+    background: Color32::from_rgb(0x18, 0x19, 0x1E),
+    surface: Color32::from_rgb(0x21, 0x23, 0x2A),
+    card: Color32::from_rgb(0x24, 0x26, 0x2E),
+    field: Color32::from_rgb(0x13, 0x14, 0x18),
+    widget: Color32::from_rgb(0x2C, 0x2F, 0x38),
+    widget_hover: Color32::from_rgb(0x38, 0x3C, 0x47),
+    widget_press: Color32::from_rgb(0x43, 0x48, 0x55),
+    line: Color32::from_rgb(0x2E, 0x31, 0x3A),
+    border: Color32::from_rgb(0x38, 0x3B, 0x46),
+    text: Color32::from_rgb(0xDC, 0xDF, 0xE6),
+    text_strong: Color32::from_rgb(0xF6, 0xF8, 0xFB),
+    accent: Color32::from_rgb(0x4F, 0x8F, 0xF7),
+    accent_soft: Color32::from_rgba_premultiplied(0x20, 0x38, 0x62, 0xB8),
+    selection: Color32::from_rgb(0x25, 0x5D, 0xC4),
     selection_text: Color32::from_rgb(0xFF, 0xFF, 0xFF),
     link: Color32::from_rgb(0x6A, 0xA8, 0xFF),
-    shadow: 110,
+    success: Color32::from_rgb(0x34, 0xD3, 0x99),
+    warning: Color32::from_rgb(0xFB, 0xBF, 0x24),
+    star: Color32::from_rgb(0xF5, 0xB8, 0x2E),
+    shadow: 115,
 };
 
 const LIGHT: Palette = Palette {
     dark: false,
-    background: Color32::from_rgb(0xF6, 0xF7, 0xF9),
+    background: Color32::from_rgb(0xF3, 0xF5, 0xF8),
     surface: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-    field: Color32::from_rgb(0xEB, 0xED, 0xF1),
-    widget: Color32::from_rgb(0xEC, 0xEE, 0xF2),
-    widget_hover: Color32::from_rgb(0xE1, 0xE4, 0xEA),
-    widget_press: Color32::from_rgb(0xD5, 0xD9, 0xE1),
-    line: Color32::from_rgb(0xE3, 0xE6, 0xEB),
-    border: Color32::from_rgb(0xD9, 0xDD, 0xE4),
-    text: Color32::from_rgb(0x24, 0x27, 0x2E),
-    text_strong: Color32::from_rgb(0x0B, 0x0D, 0x12),
+    card: Color32::from_rgb(0xFC, 0xFD, 0xFF),
+    field: Color32::from_rgb(0xE9, 0xEC, 0xF2),
+    widget: Color32::from_rgb(0xEA, 0xED, 0xF3),
+    widget_hover: Color32::from_rgb(0xDF, 0xE3, 0xEC),
+    widget_press: Color32::from_rgb(0xD2, 0xD8, 0xE3),
+    line: Color32::from_rgb(0xE0, 0xE4, 0xEC),
+    border: Color32::from_rgb(0xD5, 0xDA, 0xE4),
+    text: Color32::from_rgb(0x24, 0x28, 0x30),
+    text_strong: Color32::from_rgb(0x0B, 0x0E, 0x14),
     accent: Color32::from_rgb(0x25, 0x63, 0xEB),
+    accent_soft: Color32::from_rgb(0xE0, 0xEC, 0xFE),
     selection: Color32::from_rgb(0xD3, 0xE3, 0xFD),
     selection_text: Color32::from_rgb(0x0B, 0x3B, 0x9E),
     link: Color32::from_rgb(0x1D, 0x5B, 0xD8),
-    shadow: 34,
+    success: Color32::from_rgb(0x16, 0xA3, 0x4A),
+    warning: Color32::from_rgb(0xD9, 0x77, 0x06),
+    star: Color32::from_rgb(0xE5, 0x98, 0x08),
+    shadow: 30,
 };
 
 /// Applique le style « Moderne » aux deux modes (clair et sombre).

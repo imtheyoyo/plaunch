@@ -4,6 +4,17 @@ Toutes les versions de PLaunch. Les fichiers à télécharger
 (`plaunch.exe` et, depuis la 0.7, son empreinte `plaunch.exe.sha256`)
 sont dans l'onglet [Releases](https://github.com/imtheyoyo/plaunch/releases).
 
+## v0.12.0
+
+- **Nouveau design moderne** : thème *Moderne* activé par défaut avec palette sémantique étendue, utilisation complète des icônes vectorielles Phosphor, barre de recherche *omnibar* avec bouton d'effacement, onglets en pilules avec badges, dock des favoris amélioré, panneau de détails façon inspecteur avec bouton d'action principal et copie rapide du chemin, grille de notes à 2 colonnes et tuiles KPI dans les statistiques.
+- **Performances et réactivité** : index et listes triées mis en cache côté interface (plus de `flatten` à chaque image), chargement de `PLaunch.xml` en une seule passe au démarrage, vérifications d'existence des partages réseau `\\...` séparées pour ne pas bloquer les raccourcis locaux, et extraction d'icônes parallélisée.
+- **Correctifs** :
+  - Préservation des réglages non enregistrés lors de l'ouverture d'outils secondaires ou de la détection de programmes.
+  - Sélection multiple (`Ctrl+clic` / `Maj+clic`) corrigée sur les groupes et lors de la désélection ; raccourcis clavier `Entrée` / `F2` / `Suppr` limités aux vues de liste.
+  - Coin actif protégé contre les coordonnées d'écrans secondaires à gauche ou au-dessus de l'écran principal.
+  - Notes : identifiants stables lors de l'ajout/suppression, distinction entre fichier absent et erreur de lecture pour éviter d'écraser `plaunch-notes.xml`, et suivi exact du prochain rappel.
+  - Prise en compte des icônes de groupe dans « Rendre les chemins portables » et la correction de lettre de lecteur.
+
 ## v0.11.0
 
 - **Nouveau thème « Moderne »** (Réglages › Apparence › Thème), dans l'esprit

@@ -23,24 +23,41 @@ pub fn running_map(procs: &[eject::Proc]) -> HashMap<String, Vec<u32>> {
     map
 }
 
-/// Ajoute `secs` au temps des raccourcis dont le programme est ouvert.
-/// Renvoie le nombre de raccourcis concernés.
+/// Ajoute `secs` au temps des raccourcis dont le programme est ouvert,
+/// en parcourant l'arbre sans allouer de liste intermédiaire.
 pub fn account(
     cfg: &Config,
     running: &HashMap<String, Vec<u32>>,
     usage: &mut HashMap<String, u64>,
     secs: u64,
 ) -> usize {
-    let mut n = 0;
-    for e in cfg.flatten() {
-        if !running.contains_key(&eject::path_key(&e.target)) {
-            continue;
+    fn walk(
+        cfg: &Config,
+        el: &crate::xml::Element,
+        running: &HashMap<String, Vec<u32>>,
+        usage: &mut HashMap<String, u64>,
+        secs: u64,
+        n: &mut usize,
+    ) {
+        for child in &el.children {
+            match child.name.as_str() {
+                "files" => walk(cfg, child, running, usage, secs, n),
+                "file" => {
+                    let target = cfg.resolve(child);
+                    if running.contains_key(&eject::path_key(&target)) {
+                        *usage
+                            .entry(usage::key(config::entry_path(child)))
+                            .or_insert(0) += secs;
+                        *n += 1;
+                    }
+                }
+                _ => {}
+            }
         }
-        let Some(el) = cfg.item(&e.path) else {
-            continue;
-        };
-        *usage.entry(usage::key(config::entry_path(el))).or_insert(0) += secs;
-        n += 1;
+    }
+    let mut n = 0;
+    if let Some(files) = cfg.files() {
+        walk(cfg, files, running, usage, secs, &mut n);
     }
     n
 }

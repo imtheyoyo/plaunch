@@ -19,6 +19,7 @@ pub const EMPTY_CONFIG: &str = "<start>\r\n\t<files>\r\n\t</files>\r\n\t<general
 /// Format de date utilisé par PLaunch dans `<rundate>`.
 pub const DATE_FORMAT: &str = "%Y/%m/%d %H:%M:%S";
 
+#[derive(Clone)]
 pub struct Config {
     pub root: Element,
     pub file: PathBuf,

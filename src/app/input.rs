@@ -78,10 +78,12 @@ impl PLaunchApp {
                 actions.push(Action::Redo);
             }
         }
+        let list_view = matches!(self.view, View::Tree | View::MostUsed | View::Recent)
+            || !self.search.trim().is_empty();
         let search_focused = self
             .search_id
             .is_some_and(|id| ctx.memory(|m| m.has_focus(id)));
-        if !typing || search_focused {
+        if list_view && (!typing || search_focused) {
             self.navigate(ctx, search_focused, actions);
         }
         if ctrl_f {
@@ -93,21 +95,23 @@ impl PLaunchApp {
             }
             self.search.clear();
         }
-        if self.multi.len() > 1 {
-            if delete && !typing {
-                actions.push(Action::AskDeleteMany(self.multi.clone()));
+        if list_view {
+            if self.multi.len() > 1 {
+                if delete && !typing {
+                    actions.push(Action::AskDeleteMany(self.multi.clone()));
+                }
+            } else if let Some(sel) = self.selected.clone() {
+                if f2 && !typing {
+                    actions.push(Action::Edit(sel.clone()));
+                }
+                if delete && !typing {
+                    actions.push(Action::AskDelete(sel));
+                }
             }
-        } else if let Some(sel) = self.selected.clone() {
-            if f2 {
-                actions.push(Action::Edit(sel.clone()));
+            // Entrée dans une note ou un autre champ ne doit rien lancer.
+            if enter && (!typing || search_focused) {
+                self.enter_pressed(actions);
             }
-            if delete && !typing {
-                actions.push(Action::AskDelete(sel));
-            }
-        }
-        // Entrée dans une note ou un autre champ ne doit rien lancer.
-        if enter && (!typing || search_focused) {
-            self.enter_pressed(actions);
         }
     }
 
@@ -156,8 +160,9 @@ impl PLaunchApp {
             return;
         };
         let (is_group, key) = {
-            let guard = self.shared.config.lock().unwrap();
-            let Some(cfg) = guard.as_ref() else { return };
+            let Some(cfg) = self.ui_config.as_deref() else {
+                return;
+            };
             (
                 cfg.item(&sel).is_some_and(|e| e.name == "files"),
                 group_key_at(cfg, &sel),
@@ -204,11 +209,11 @@ impl PLaunchApp {
                 return;
             }
         }
-        let guard = self.shared.config.lock().unwrap();
-        if let Some(cfg) = guard.as_ref() {
+        let guard = self.ui_config.as_deref();
+        if let Some(cfg) = guard {
             let opts = cfg.search_options();
             if opts.plaunch {
-                if let Some(e) = plaunch_hits(cfg, &q).into_iter().next() {
+                if let Some(e) = plaunch_hits(&self.index, &q).into_iter().next() {
                     actions.push(Action::Launch(e.path));
                     return;
                 }

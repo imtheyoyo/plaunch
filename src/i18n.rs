@@ -845,6 +845,10 @@ const EN: &[(&str, &str)] = &[
     ("Annuler : ne rien faire", "Cancel: do nothing"),
     // v0.11
     ("Moderne", "Modern"),
+    // v0.12
+    ("Copier le chemin", "Copy path"),
+    ("Chemin copié", "Path copied"),
+    ("Effacer la recherche", "Clear search"),
     // Erreurs
     ("raccourci « {} » invalide : {}", "invalid hotkey “{}”: {}"),
     (

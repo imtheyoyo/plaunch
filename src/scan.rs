@@ -89,6 +89,12 @@ fn stem(p: &Path) -> String {
         .unwrap_or_default()
 }
 
+fn dir_name_lower(p: &Path) -> String {
+    p.file_name()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
 /// Parcourt `root` et renvoie les programmes absents de `known` (chemins
 /// complets en minuscules).
 pub fn scan(root: &Path, known: &HashSet<String>) -> Vec<Found> {
@@ -119,7 +125,7 @@ fn walk(root: &Path, dir: &Path, depth: usize, known: &HashSet<String>, out: &mu
     let mut exes = Vec::new();
     for path in entries {
         if path.is_dir() {
-            let name = stem(&path).to_lowercase();
+            let name = dir_name_lower(&path);
             // La plateforme PortableApps.com et les données ne sont pas des applications.
             if name == "portableapps.com" || name == "data" || name.starts_with('.') {
                 continue;
@@ -154,7 +160,7 @@ fn walk(root: &Path, dir: &Path, depth: usize, known: &HashSet<String>, out: &mu
     // Dossier d'un seul programme : on garde l'exécutable principal (celui
     // qui porte le nom du dossier, sinon le premier).
     if !exes.is_empty() && depth > 0 {
-        let dir_name = stem(dir).to_lowercase();
+        let dir_name = dir_name_lower(dir);
         let main = exes
             .iter()
             .find(|e| stem(Path::new(e)).to_lowercase().starts_with(&dir_name))

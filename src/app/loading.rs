@@ -75,9 +75,9 @@ impl PLaunchApp {
             .set_status(trf("{} nouveaux programmes détectés", &[&found.len()]));
         self.found = found;
         // Affichage immédiat (au démarrage aussi), sauf si une autre
-        // fenêtre est ouverte : le bouton de la barre d'état reste alors.
+        // fenêtre (dont les réglages) est ouverte : le bouton de la barre d'état reste alors.
         let _ = quiet;
-        if self.dialog.is_none() || matches!(self.dialog, Some(Dialog::Settings(_))) {
+        if self.dialog.is_none() {
             self.apply(Action::ShowFound);
         }
     }
@@ -96,52 +96,58 @@ impl PLaunchApp {
 
     pub(super) fn open(&mut self, file: &Path) {
         match Config::load(file) {
-            Ok(cfg) => {
-                let generation = self.shared.next_generation();
-                let mut targets: Vec<String> =
-                    cfg.flatten().into_iter().map(|e| e.target).collect();
-                self.shared
-                    .set_status(trf("{} raccourcis chargés", &[&targets.len()]));
-                self.exists.clear();
-                self.check_existence(targets.clone());
-                targets.extend(group_icons(&cfg));
-                self.shared.clear_history();
-                self.shared.icons.lock().unwrap().clear();
-                self.textures.clear();
-                self.flush_notes();
-                let notes = Notes::load(&notes::path_for(&cfg.file)).unwrap_or_else(|e| {
-                    self.shared.set_status(trf("Notes illisibles : {}", &[&e]));
-                    Notes {
-                        file: notes::path_for(&cfg.file),
-                        items: Vec::new(),
-                    }
-                });
-                *self.shared.notes.lock().unwrap() = Some(notes);
-                *self.shared.usage.lock().unwrap() =
-                    crate::usage::load(&crate::usage::path_for(&cfg.file));
-                self.multi.clear();
-                *self.shared.config.lock().unwrap() = Some(cfg);
-                // Les icônes du menu Démarrer sont recalculées avec le reste.
-                targets.extend(
-                    self.shared
-                        .start_menu
-                        .lock()
-                        .unwrap()
-                        .iter()
-                        .map(|i| i.path.clone()),
-                );
-                icons::spawn_loader(targets, self.shared.clone(), generation);
-                self.load_error = None;
-                self.selected = None;
-                self.dialog = None;
-                self.check_drive();
-                let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
-                self.drive_warnings = crate::drivecheck::check(&dir);
-                for w in &self.drive_warnings {
-                    crate::log::error(w);
-                }
-            }
+            Ok(cfg) => self.apply_loaded_config(cfg),
             Err(e) => self.load_error = Some(e),
+        }
+    }
+
+    pub(super) fn apply_loaded_config(&mut self, cfg: Config) {
+        let file = cfg.file.clone();
+        let generation = self.shared.next_generation();
+        let mut targets: Vec<String> = cfg.flatten().into_iter().map(|e| e.target).collect();
+        self.shared
+            .set_status(trf("{} raccourcis chargés", &[&targets.len()]));
+        self.exists.clear();
+        self.check_existence(targets.clone());
+        targets.extend(group_icons(&cfg));
+        self.shared.clear_history();
+        self.shared.icons.lock().unwrap().clear();
+        self.shared.icon_seq.fetch_add(1, Ordering::SeqCst);
+        self.textures.clear();
+        self.synced_icon_seq = 0;
+        self.flush_notes();
+        let notes = match Notes::load(&notes::path_for(&cfg.file)) {
+            Ok(n) => Some(n),
+            Err(e) => {
+                // Conserve `None` pour ne jamais écraser un fichier illisible.
+                self.shared.error(trf("Notes illisibles : {}", &[&e]));
+                None
+            }
+        };
+        *self.shared.notes.lock().unwrap() = notes;
+        *self.shared.usage.lock().unwrap() = crate::usage::load(&crate::usage::path_for(&cfg.file));
+        self.multi.clear();
+        *self.shared.config.lock().unwrap() = Some(cfg);
+        self.sync_ui_config();
+        // Les icônes du menu Démarrer sont recalculées avec le reste.
+        targets.extend(
+            self.shared
+                .start_menu
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|i| i.path.clone()),
+        );
+        icons::spawn_loader(targets, self.shared.clone(), generation);
+        self.load_error = None;
+        self.selected = None;
+        self.dialog = None;
+        self.stashed_settings = None;
+        self.check_drive();
+        let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+        self.drive_warnings = crate::drivecheck::check(&dir);
+        for w in &self.drive_warnings {
+            crate::log::error(w);
         }
     }
 
@@ -281,11 +287,6 @@ impl PLaunchApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(width, height)));
     }
 
-    /// Raccourcis épinglés, dans l'ordre du fichier.
-    pub(super) fn favorites(cfg: &Config) -> Vec<config::FlatEntry> {
-        cfg.favorites()
-    }
-
     /// Enregistre les notes si elles ont été modifiées.
     pub(super) fn flush_notes(&mut self) {
         if self.notes_dirty.take().is_none() {
@@ -414,17 +415,26 @@ impl PLaunchApp {
     }
 
     pub(super) fn check_existence(&self, targets: Vec<String>) {
-        let tx = self.exists_tx.clone();
-        let shared = self.shared.clone();
-        std::thread::spawn(move || {
-            for t in targets {
-                let ok = paths::is_url(&t) || paths::to_native(&t).exists();
-                if tx.send((t, ok)).is_err() {
-                    return;
-                }
+        let (network, local): (Vec<String>, Vec<String>) =
+            targets.into_iter().partition(|t| t.starts_with("\\\\"));
+        let spawn = |list: Vec<String>, tx: Sender<(String, bool)>, shared: Arc<Shared>| {
+            if list.is_empty() {
+                return;
             }
-            shared.repaint();
-        });
+            std::thread::spawn(move || {
+                for t in list {
+                    let ok = paths::is_url(&t) || paths::to_native(&t).exists();
+                    if tx.send((t, ok)).is_err() {
+                        return;
+                    }
+                }
+                shared.repaint();
+            });
+        };
+        spawn(local, self.exists_tx.clone(), self.shared.clone());
+        // Les partages réseau injoignables peuvent prendre 20+ secondes : un
+        // fil séparé évite de bloquer la vérification des raccourcis locaux.
+        spawn(network, self.exists_tx.clone(), self.shared.clone());
     }
 
     /// Vérifie et charge l'icône d'une cible ajoutée ou modifiée.
@@ -442,10 +452,11 @@ impl PLaunchApp {
 
     /// Transforme en textures les icônes nouvellement extraites.
     pub(super) fn sync_textures(&mut self, ctx: &egui::Context) {
-        let icons = self.shared.icons.lock().unwrap();
-        if icons.len() == self.textures.len() {
+        let seq = self.shared.icon_seq.load(Ordering::SeqCst);
+        if seq == self.synced_icon_seq {
             return;
         }
+        let icons = self.shared.icons.lock().unwrap();
         for (target, img) in icons.iter() {
             if self.textures.contains_key(target) {
                 continue;
@@ -457,6 +468,7 @@ impl PLaunchApp {
             let tex = ctx.load_texture(target, image, egui::TextureOptions::LINEAR);
             self.textures.insert(target.clone(), tex);
         }
+        self.synced_icon_seq = seq;
     }
 
     pub(super) fn base_dir(&self) -> String {

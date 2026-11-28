@@ -73,6 +73,16 @@ impl View {
             View::Stats => tr("Statistiques"),
         }
     }
+
+    fn icon(self) -> &'static str {
+        match self {
+            View::Tree => icon::FOLDER,
+            View::MostUsed => icon::ROCKET_LAUNCH,
+            View::Recent => icon::CLOCK_COUNTER_CLOCKWISE,
+            View::Notes => icon::NOTE_PENCIL,
+            View::Stats => icon::CHART_BAR,
+        }
+    }
 }
 
 /// Largeur de la fenêtre en mode compact.
@@ -196,6 +206,7 @@ enum Action {
     ToggleGroupFavorite(ItemPath),
     DismissDriveWarnings,
     CreateConfig(PathBuf),
+    CopyPath(String),
 }
 
 /// Éjection en cours (fermeture des programmes en tâche de fond).
@@ -307,6 +318,80 @@ enum Dialog {
 
 type Textures = HashMap<String, egui::TextureHandle>;
 
+#[derive(Clone)]
+pub(super) struct CachedEntry {
+    pub(super) entry: config::FlatEntry,
+    pub(super) folded_name: String,
+    pub(super) folded_target: String,
+}
+
+#[derive(Default)]
+pub(super) struct CachedIndex {
+    version: (u64, u64, u64),
+    has_config: bool,
+    pub(super) entries: Vec<CachedEntry>,
+    pub(super) favorites: Vec<config::FlatEntry>,
+    pub(super) favorite_groups: Vec<ItemPath>,
+    pub(super) most_used: Vec<config::FlatEntry>,
+    pub(super) recent: Vec<config::FlatEntry>,
+    pub(super) groups_count: usize,
+}
+
+impl CachedIndex {
+    fn rebuild(&mut self, version: (u64, u64, u64), cfg: Option<&Config>) {
+        self.version = version;
+        self.has_config = cfg.is_some();
+        self.entries.clear();
+        self.favorites.clear();
+        self.favorite_groups.clear();
+        self.most_used.clear();
+        self.recent.clear();
+        self.groups_count = 0;
+
+        let Some(cfg) = cfg else { return };
+        let flat = cfg.flatten();
+        self.groups_count = cfg.files().map(count_groups).unwrap_or(0);
+        self.favorite_groups = cfg.favorite_groups();
+
+        for e in flat {
+            if e.favorite {
+                self.favorites.push(e.clone());
+            }
+            if e.runcount > 0 {
+                self.most_used.push(e.clone());
+            }
+            if e.rundate.is_some() {
+                self.recent.push(e.clone());
+            }
+            let folded_name = fuzzy::fold(&e.name);
+            let folded_target = fuzzy::fold(&e.target);
+            self.entries.push(CachedEntry {
+                entry: e,
+                folded_name,
+                folded_target,
+            });
+        }
+        self.favorites.sort_by_key(|e| {
+            if e.favorite_rank == 0 {
+                u32::MAX
+            } else {
+                e.favorite_rank
+            }
+        });
+        self.most_used
+            .sort_by_key(|e| std::cmp::Reverse(e.runcount));
+        self.recent.sort_by(|a, b| b.rundate.cmp(&a.rundate));
+    }
+}
+
+fn count_groups(el: &Element) -> usize {
+    el.children
+        .iter()
+        .filter(|c| c.name == "files")
+        .map(|c| 1 + count_groups(c))
+        .sum()
+}
+
 pub struct PLaunchApp {
     shared: Arc<Shared>,
     settings: Settings,
@@ -320,7 +405,12 @@ pub struct PLaunchApp {
     exists_tx: Sender<(String, bool)>,
     exists_rx: Receiver<(String, bool)>,
     textures: Textures,
+    synced_icon_seq: u64,
+    ui_config: Option<Arc<Config>>,
+    index: CachedIndex,
     dialog: Option<Dialog>,
+    /// Réglages mis de côté lorsqu'un outil secondaire est ouvert depuis Réglages.
+    stashed_settings: Option<SettingsForm>,
     focus_search: bool,
     first_frame: bool,
     tray: Option<tray::Tray>,
@@ -355,6 +445,8 @@ impl PLaunchApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         file: Option<PathBuf>,
+        initial_config: Option<Result<Config, String>>,
+        wide_width: f32,
         settings: Settings,
     ) -> Self {
         let shared = Arc::new(Shared::default());
@@ -391,7 +483,11 @@ impl PLaunchApp {
             exists_tx,
             exists_rx,
             textures: HashMap::new(),
+            synced_icon_seq: 0,
+            ui_config: None,
+            index: CachedIndex::default(),
             dialog: None,
+            stashed_settings: None,
             focus_search: true,
             first_frame: true,
             tray: None,
@@ -403,7 +499,7 @@ impl PLaunchApp {
             visible: RefCell::new(Vec::new()),
             open_groups: HashSet::new(),
             scroll_to_selected: false,
-            wide_width: 620.0,
+            wide_width: wide_width.max(560.0),
             eject_state: Arc::default(),
             found: Vec::new(),
             found_rx: None,
@@ -411,12 +507,16 @@ impl PLaunchApp {
             multi: Vec::new(),
             drive_warnings: Vec::new(),
         };
-        if let Some(f) = file.filter(|f| f.exists()) {
-            app.open(&f);
-            // Pas de relance des programmes « au démarrage » après une mise à jour.
-            if std::env::var_os(update::RESTART_ENV).is_none() {
-                app.run_autorun();
+        match initial_config {
+            Some(Ok(cfg)) => {
+                app.apply_loaded_config(cfg);
+                // Pas de relance des programmes « au démarrage » après une mise à jour.
+                if std::env::var_os(update::RESTART_ENV).is_none() {
+                    app.run_autorun();
+                }
             }
+            Some(Err(e)) => app.load_error = Some(e),
+            None => {}
         }
         if app.settings.check_updates {
             app.check_update(true);
@@ -433,6 +533,17 @@ impl PLaunchApp {
         hotcorner::spawn(app.shared.clone());
         crate::monitor::spawn(app.shared.clone());
         app
+    }
+
+    /// Met à jour le snapshot UI et l'index mis en cache si la configuration a changé.
+    pub(super) fn sync_ui_config(&mut self) {
+        let ver = self.shared.ui_version();
+        if self.index.version == ver && self.index.has_config == self.ui_config.is_some() {
+            return;
+        }
+        let cfg = self.shared.config.lock().unwrap().clone().map(Arc::new);
+        self.index.rebuild(ver, cfg.as_deref());
+        self.ui_config = cfg;
     }
 
     /// Icône de notification et raccourci global (Windows uniquement).
@@ -516,7 +627,15 @@ impl eframe::App for PLaunchApp {
             crate::log::info("PLaunch.xml modifié par un autre programme : rechargement");
             let selected = self.selected.clone();
             self.reload();
-            self.selected = selected;
+            if let Some(sel) = selected {
+                if self
+                    .ui_config
+                    .as_ref()
+                    .is_some_and(|c| c.item(&sel).is_some())
+                {
+                    self.selected = Some(sel);
+                }
+            }
             self.shared
                 .set_status(tr("PLaunch.xml modifié par un autre programme : rechargé"));
         }
@@ -530,71 +649,71 @@ impl eframe::App for PLaunchApp {
             }
         }
         self.handle_close(&ctx);
+        self.sync_ui_config();
 
         let mut actions = Vec::new();
         self.handle_input(&ctx, &mut actions);
 
         let shared = self.shared.clone();
         let status = shared.status.lock().unwrap().clone();
-        {
-            let guard = shared.config.lock().unwrap();
-            let cfg = guard.as_ref();
+        let ui_cfg = self.ui_config.clone();
+        let cfg = ui_cfg.as_deref();
 
-            egui::Panel::top("top").show(ui, |ui| {
-                ui.add_space(4.0);
-                self.top_bar(ui, &mut actions, cfg);
-                ui.add_space(2.0);
-            });
-            egui::Panel::bottom("status").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if !self.found.is_empty()
-                        && ui
-                            .small_button(trf("＋ {} nouveaux programmes", &[&self.found.len()]))
-                            .clicked()
+        egui::Panel::top("top").show(ui, |ui| {
+            ui.add_space(4.0);
+            self.top_bar(ui, &mut actions, cfg);
+            ui.add_space(2.0);
+        });
+        egui::Panel::bottom("status").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if !self.found.is_empty()
+                    && ui
+                        .small_button(trf("＋ {} nouveaux programmes", &[&self.found.len()]))
+                        .clicked()
+                {
+                    actions.push(Action::ShowFound);
+                }
+                if let update::State::Available(r) = &*shared.update.lock().unwrap() {
+                    if ui
+                        .small_button(format!("⬆ {}", r.version))
+                        .on_hover_text(tr("Nouvelle version : ouvrir les réglages"))
+                        .clicked()
                     {
-                        actions.push(Action::ShowFound);
+                        actions.push(Action::OpenSettings);
                     }
-                    if let update::State::Available(r) = &*shared.update.lock().unwrap() {
-                        if ui
-                            .small_button(format!("⬆ {}", r.version))
-                            .on_hover_text(tr("Nouvelle version : ouvrir les réglages"))
-                            .clicked()
-                        {
-                            actions.push(Action::OpenSettings);
-                        }
-                    }
-                    if let Some(cfg) = cfg {
-                        self.profile_menu(ui, cfg, &mut actions);
-                        ui.separator();
-                    }
-                    ui.label(&status);
-                    if let Some(cfg) = cfg {
-                        let file = cfg.file.display().to_string();
-                        ui.separator();
-                        ui.add(egui::Label::new(egui::RichText::new(&file).weak()).truncate())
-                            .on_hover_text(&file);
-                    }
+                }
+                if let Some(cfg) = cfg {
+                    self.profile_menu(ui, cfg, &mut actions);
+                    ui.separator();
+                }
+                ui.label(&status);
+                if let Some(cfg) = cfg {
+                    let file = cfg.file.display().to_string();
+                    ui.separator();
+                    ui.add(egui::Label::new(egui::RichText::new(&file).weak()).truncate())
+                        .on_hover_text(&file);
+                }
+            });
+        });
+        if !self.settings.compact {
+            egui::Panel::right("details")
+                .resizable(true)
+                .default_size(250.0)
+                .min_size(200.0)
+                .show(ui, |ui| {
+                    ui.add_space(6.0);
+                    actions.extend(self.details(ui, cfg));
                 });
-            });
-            if !self.settings.compact {
-                egui::Panel::right("details")
-                    .resizable(true)
-                    .default_size(250.0)
-                    .min_size(200.0)
-                    .show(ui, |ui| {
-                        ui.add_space(6.0);
-                        actions.extend(self.details(ui, cfg));
-                    });
-            }
-            egui::CentralPanel::default().show(ui, |ui| {
-                actions.extend(self.central(ui, cfg));
-            });
-            self.scroll_to_selected = false;
-            self.dialog_ui(&ctx, cfg, &mut actions);
         }
+        egui::CentralPanel::default().show(ui, |ui| {
+            actions.extend(self.central(ui, cfg));
+        });
+        self.scroll_to_selected = false;
+        self.dialog_ui(&ctx, cfg, &mut actions);
 
         for a in actions {
             self.apply(a);
         }
+        self.sync_ui_config();
     }
 }
